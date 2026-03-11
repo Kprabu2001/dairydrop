@@ -101,6 +101,7 @@ class ProductOut(BaseModel):
     carbs: Optional[str]
     avg_rating: float
     review_count: int
+    is_active: bool
 
     class Config:
         from_attributes = True
@@ -149,6 +150,38 @@ class PromoResult(BaseModel):
     message: str
 
 
+# ── Promo Code Admin ────────────────────────────────────────
+class PromoCodeOut(BaseModel):
+    id: int
+    code: str
+    discount_percent: float
+    max_uses: Optional[int]
+    uses_count: int
+    min_order_value: float
+    is_active: bool
+    expires_at: Optional[datetime]
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class PromoCodeCreate(BaseModel):
+    code: str
+    discount_percent: float
+    max_uses: Optional[int] = None
+    min_order_value: float = 0.0
+    expires_at: Optional[datetime] = None
+
+
+class PromoCodeUpdate(BaseModel):
+    discount_percent: Optional[float] = None
+    max_uses: Optional[int] = None
+    min_order_value: Optional[float] = None
+    is_active: Optional[bool] = None
+    expires_at: Optional[datetime] = None
+
+
 # ── Order ───────────────────────────────────────────────────
 class OrderItemOut(BaseModel):
     id: int
@@ -175,6 +208,7 @@ class OrderOut(BaseModel):
     points_earned: int
     points_redeemed: int
     estimated_eta: Optional[str]
+    notes: Optional[str]
     items: List[OrderItemOut]
     created_at: datetime
 
@@ -187,6 +221,11 @@ class PlaceOrderRequest(BaseModel):
     promo_code: Optional[str] = None
     redeem_points: int = 0
     notes: Optional[str] = None
+    payment_intent_id: Optional[str] = None   # Required for paid orders
+
+
+class CancelOrderRequest(BaseModel):
+    reason: Optional[str] = None
 
 
 # ── Review ──────────────────────────────────────────────────
@@ -258,3 +297,41 @@ class ReferralOut(BaseModel):
 class SubscriptionUpdate(BaseModel):
     frequency: str   # daily, weekly, biweekly
     items: Optional[list] = None
+
+
+# ── Support Ticket ──────────────────────────────────────────
+class SupportTicketCreate(BaseModel):
+    subject: str
+    message: str
+    order_id: Optional[int] = None
+
+
+class SupportTicketOut(BaseModel):
+    id: int
+    user_id: int
+    subject: str
+    message: str
+    status: str
+    order_id: Optional[int]
+    admin_reply: Optional[str]
+    created_at: datetime
+    updated_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True
+
+
+class SupportTicketReply(BaseModel):
+    reply: str
+    status: Optional[str] = None
+
+
+# ── Admin Stats ─────────────────────────────────────────────
+class AdminStats(BaseModel):
+    total_revenue: float
+    orders_today: int
+    orders_this_week: int
+    total_users: int
+    active_users: int
+    total_orders: int
+    low_stock_products: int

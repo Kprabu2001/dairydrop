@@ -42,7 +42,7 @@ services:
     container_name: dairydrop_backend
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://dairydrop:dairydrop_secret@db:5432/dairydrop
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@db:5432/dairydrop
       REDIS_URL: redis://redis:6379
       SECRET_KEY: supersecretkey_change_in_production_32chars
       ALGORITHM: HS256

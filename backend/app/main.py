@@ -14,6 +14,7 @@ from app.api.routes import (
     auth, users, products, cart, orders,
     reviews, addresses, notifications, loyalty, referrals
 )
+from app.api.routes import support, admin as admin_router
 
 
 @asynccontextmanager
@@ -27,7 +28,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="DairyDrop API",
     description="Full-featured dairy delivery app backend",
-    version="1.0.0",
+    version="1.1.0",
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     lifespan=lifespan,
@@ -47,18 +48,20 @@ os.makedirs("uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 # ── Routers ───────────────────────────────────────────────────
-app.include_router(auth.router,          prefix="/api/auth",          tags=["Auth"])
-app.include_router(users.router,         prefix="/api/users",         tags=["Users"])
-app.include_router(products.router,      prefix="/api/products",      tags=["Products"])
-app.include_router(cart.router,          prefix="/api/cart",          tags=["Cart"])
-app.include_router(orders.router,        prefix="/api/orders",        tags=["Orders"])
-app.include_router(reviews.router,       prefix="/api/reviews",       tags=["Reviews"])
-app.include_router(addresses.router,     prefix="/api/addresses",     tags=["Addresses"])
-app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
-app.include_router(loyalty.router,       prefix="/api/loyalty",       tags=["Loyalty"])
-app.include_router(referrals.router,     prefix="/api/referrals",     tags=["Referrals"])
+app.include_router(auth.router,              prefix="/api/auth",          tags=["Auth"])
+app.include_router(users.router,             prefix="/api/users",         tags=["Users"])
+app.include_router(products.router,          prefix="/api/products",      tags=["Products"])
+app.include_router(cart.router,              prefix="/api/cart",          tags=["Cart"])
+app.include_router(orders.router,            prefix="/api/orders",        tags=["Orders"])
+app.include_router(reviews.router,           prefix="/api/reviews",       tags=["Reviews"])
+app.include_router(addresses.router,         prefix="/api/addresses",     tags=["Addresses"])
+app.include_router(notifications.router,     prefix="/api/notifications", tags=["Notifications"])
+app.include_router(loyalty.router,           prefix="/api/loyalty",       tags=["Loyalty"])
+app.include_router(referrals.router,         prefix="/api/referrals",     tags=["Referrals"])
+app.include_router(support.router,           prefix="/api/support",       tags=["Support"])
+app.include_router(admin_router.router,      prefix="/api/admin",         tags=["Admin"])
 
 
 @app.get("/api/health")
 async def health():
-    return {"status": "healthy", "app": "DairyDrop", "version": "1.0.0"}
+    return {"status": "healthy", "app": "DairyDrop", "version": "1.1.0"}

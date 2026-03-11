@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List, Optional
@@ -32,14 +32,15 @@ async def get_categories(db: AsyncSession = Depends(get_db)):
     return {"categories": ["All"] + [r[0] for r in result.all()]}
 
 
-@router.get("/{product_id}", response_model=ProductOut)
-async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
-    from fastapi import HTTPException
-    result = await db.execute(select(Product).where(Product.id == product_id))
-    product = result.scalar_one_or_none()
-    if not product:
-        raise HTTPException(status_code=404, detail="Product not found")
-    return product
+# ── CRITICAL: Admin routes MUST be registered BEFORE /{product_id}
+#    Otherwise FastAPI matches "admin" as an integer product_id → 422 error
+@router.get("/admin/all", response_model=List[ProductOut])
+async def admin_list_all_products(
+    db: AsyncSession = Depends(get_db),
+    _: object = Depends(get_current_admin),
+):
+    result = await db.execute(select(Product).order_by(Product.id))
+    return result.scalars().all()
 
 
 @router.post("/", response_model=ProductOut, status_code=201)
@@ -62,7 +63,6 @@ async def update_product(
     db: AsyncSession = Depends(get_db),
     _: object = Depends(get_current_admin),
 ):
-    from fastapi import HTTPException
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
@@ -80,19 +80,19 @@ async def delete_product(
     db: AsyncSession = Depends(get_db),
     _: object = Depends(get_current_admin),
 ):
-    from fastapi import HTTPException
     result = await db.execute(select(Product).where(Product.id == product_id))
     product = result.scalar_one_or_none()
     if not product:
         raise HTTPException(status_code=404, detail="Product not found")
-    product.is_active = False   # soft delete
+    product.is_active = False  # soft delete
     await db.commit()
 
 
-@router.get("/admin/all", response_model=List[ProductOut])
-async def admin_list_all_products(
-    db: AsyncSession = Depends(get_db),
-    _: object = Depends(get_current_admin),
-):
-    result = await db.execute(select(Product).order_by(Product.id))
-    return result.scalars().all()
+# ── Parameterized route LAST to avoid swallowing static paths
+@router.get("/{product_id}", response_model=ProductOut)
+async def get_product(product_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Product).where(Product.id == product_id))
+    product = result.scalar_one_or_none()
+    if not product:
+        raise HTTPException(status_code=404, detail="Product not found")
+    return product

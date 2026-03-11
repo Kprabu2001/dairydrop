@@ -66,6 +66,7 @@ export const ordersAPI = {
   place: (data)     => api.post("/orders/place", data),
   list: ()          => api.get("/orders"),
   get: (id)         => api.get(`/orders/${id}`),
+  cancel: (id, reason) => api.patch(`/orders/${id}/cancel`, { reason }),
 };
 
 // ── Reviews ─────────────────────────────────────────────────
@@ -106,6 +107,26 @@ export const referralsAPI = {
 export const usersAPI = {
   update: (data)    => api.put("/users/me", data),
   changePassword: (data) => api.post("/users/me/change-password", data),
+};
+
+// ── Support Tickets ──────────────────────────────────────────
+export const supportAPI = {
+  create: (data)    => api.post("/support", data),
+  list: ()          => api.get("/support"),
+  get: (id)         => api.get(`/support/${id}`),
+};
+
+// ── Admin ────────────────────────────────────────────────────
+export const adminAPI = {
+  stats: ()                    => api.get("/admin/stats"),
+  users: ()                    => api.get("/admin/users"),
+  toggleUser: (id)             => api.patch(`/admin/users/${id}/toggle-active`),
+  promos: ()                   => api.get("/admin/promos"),
+  createPromo: (data)          => api.post("/admin/promos", data),
+  updatePromo: (id, data)      => api.patch(`/admin/promos/${id}`, data),
+  deletePromo: (id)            => api.delete(`/admin/promos/${id}`),
+  allTickets: ()               => api.get("/support/admin/all"),
+  replyTicket: (id, data)      => api.patch(`/support/admin/${id}/reply`, data),
 };
 
 export default api;
