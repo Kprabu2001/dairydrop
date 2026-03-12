@@ -1,10 +1,13 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from app.core.env import env
+import ssl
 
 db_url = env.DATABASE_URL
 if db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+
+ssl_context = ssl.create_default_context()
 
 engine = create_async_engine(
     db_url,
@@ -12,7 +15,7 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     connect_args={
-        "ssl": True,
+        "ssl":ssl_context,
         "statement_cache_size": 0,
     },
 )

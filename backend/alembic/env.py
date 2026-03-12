@@ -5,6 +5,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 from app.core.env import env
+import ssl
 
 db_url = env.DATABASE_URL
 if db_url and db_url.startswith("postgresql://"):
@@ -37,7 +38,7 @@ async def run_async_migrations() -> None:
     connectable = create_async_engine(
         db_url,
         poolclass=pool.NullPool,
-        connect_args={"ssl": "require", "statement_cache_size": 0},
+        connect_args={"ssl": ssl.create_default_context(),"statement_cache_size": 0},
     )
     async with connectable.connect() as connection:
         await connection.run_sync(do_run_migrations)
