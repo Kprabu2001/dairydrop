@@ -12,6 +12,7 @@ engine = create_async_engine(
     echo=env.ENVIRONMENT=="development",
     pool_size=10,
     max_overflow=20,
+    connect_args={"statement_cache_size": 0},
 )
 
 AsyncSessionLocal = async_sessionmaker(
