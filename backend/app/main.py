@@ -34,6 +34,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── Trust proxy headers from Railway (fixes http:// redirects) ──
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
 # ── CORS ─────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
