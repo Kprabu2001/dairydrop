@@ -8,11 +8,14 @@ if db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 engine = create_async_engine(
-    db_url,
-    echo=env.ENVIRONMENT=="development",
+    db_url.split("?")[0],  # remove ?sslmode=require from URL
+    echo=env.ENVIRONMENT == "development",
     pool_size=10,
     max_overflow=20,
-    connect_args={"statement_cache_size": 0},# remove for local testing with SQLite, but helps with asyncpg performance in production
+    connect_args={
+        "ssl": "require",
+        "statement_cache_size": 0,  # required for Supabase pooler
+    },
 )
 
 AsyncSessionLocal = async_sessionmaker(
