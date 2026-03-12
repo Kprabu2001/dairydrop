@@ -10,7 +10,7 @@ ENV_FILE = Path(__file__).resolve().parent.parent.parent.parent / ".env"
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=str(ENV_FILE), env_file_encoding="utf-8", extra="ignore")
     # Database — use full asyncpg URL directly, no conversion needed
-    DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/dairydrop"
+    DATABASE_URL: str = "postgresql+asyncpg://user:password@db:5432/dairydrop"
 
     # Redis
     REDIS_URL: str = "redis://redis:6379"
