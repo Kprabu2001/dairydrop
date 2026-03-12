@@ -16,7 +16,8 @@ engine = create_async_engine(
         "ssl": "require",
         "statement_cache_size": 0,
         "prepared_statement_cache_size": 0,
-        "prepared_statement_name_func": lambda: f"__asyncpg_{id(object())}__",
+         "server_settings": {
+            "jit": "off"},
     },
 )
 
