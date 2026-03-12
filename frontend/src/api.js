@@ -1,6 +1,6 @@
 import axios from "axios";
 
-const API_URL = "https://content-harmony-production.up.railway.app";
+const API_URL = (process.env.REACT_APP_API_URL || "http://localhost:8000").replace(/^http:\/\//i, "https://");
 
 const api = axios.create({
   baseURL: `${API_URL}/api`,
