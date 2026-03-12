@@ -12,7 +12,7 @@ engine = create_async_engine(
     echo=env.ENVIRONMENT=="development",
     pool_size=10,
     max_overflow=20,
-    connect_args={"statement_cache_size": 0},
+    connect_args={"statement_cache_size": 0},# remove for local testing with SQLite, but helps with asyncpg performance in production
 )
 
 AsyncSessionLocal = async_sessionmaker(
