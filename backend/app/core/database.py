@@ -5,7 +5,6 @@ from app.core.env import env
 db_url = env.DATABASE_URL
 if db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
-db_url = db_url.split("?")[0]  # strip ?sslmode — asyncpg doesn't accept it
 
 engine = create_async_engine(
     db_url,
@@ -13,11 +12,8 @@ engine = create_async_engine(
     pool_size=10,
     max_overflow=20,
     connect_args={
-        "ssl": "require",
+        "ssl": True,
         "statement_cache_size": 0,
-        "prepared_statement_cache_size": 0,
-         "server_settings": {
-            "jit": "off"},
     },
 )
 
