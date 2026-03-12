@@ -5,16 +5,14 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 import os, sys
+from app.core.env import env  # importing pydantic settings into alembic's env.py
+db_url = env.DATABASE_URL
 
-sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from app.core.database import Base
 from app.models.user import *  # noqa: import all models
 
 config = context.config
-
-# Override with env var
-db_url = os.getenv("DATABASE_URL", config.get_main_option("sqlalchemy.url"))
 if db_url and db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
 config.set_main_option("sqlalchemy.url", db_url)

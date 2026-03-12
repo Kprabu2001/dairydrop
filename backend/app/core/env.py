@@ -3,12 +3,12 @@ from typing import List, Union
 import json
 from pathlib import Path
 
-ENV_FILE = Path(__file__).resolve().parent.parent.parent / ".env"
+ENV_FILE = Path(__file__).resolve().parent.parent.parent.parent / ".env"
 
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=str(ENV_FILE), env_file_encoding="utf-8")
+    model_config = SettingsConfigDict(env_file=str(ENV_FILE), env_file_encoding="utf-8", extra="ignore")
     # Database — use full asyncpg URL directly, no conversion needed
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/dairydrop"
 
@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
 
     # App
-    ENVIRONMENT: str = "development"
+    ENVIRONMENT: str = ""
 
     STRIPE_SECRET_KEY: str = "sk_test_123"
 
@@ -46,5 +46,3 @@ class Settings(BaseSettings):
 
 
 env = Settings()
-
-print(f"[config] ADMIN_REGISTRATION_CODE loaded as: '{env.ADMIN_REGISTRATION_CODE}'")

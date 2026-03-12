@@ -9,7 +9,7 @@ if db_url.startswith("postgresql://"):
 
 engine = create_async_engine(
     db_url,
-    echo=env.ENVIRONMENT == "production",
+    echo=env.ENVIRONMENT=="development",
     pool_size=10,
     max_overflow=20,
 )
