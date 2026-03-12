@@ -6,9 +6,10 @@ from app.core.env import env
 db_url = env.DATABASE_URL
 if db_url.startswith("postgresql://"):
     db_url = db_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+db_url.split("?")[0],  # remove ?sslmode=require from URL
 
 engine = create_async_engine(
-    db_url.split("?")[0],  # remove ?sslmode=require from URL
+    
     echo=env.ENVIRONMENT == "development",
     pool_size=10,
     max_overflow=20,
