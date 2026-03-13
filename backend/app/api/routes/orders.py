@@ -62,7 +62,8 @@ async def create_payment_intent(
         lr = await db.execute(select(LoyaltyAccount).where(LoyaltyAccount.user_id == current_user.id))
         loyalty = lr.scalar_one_or_none()
         if loyalty and loyalty.points >= payload.redeem_points:
-            pts_discount = (payload.redeem_points / 500) * 5
+            raw_discount = (payload.redeem_points / 100) * 10  # 100 pts = ₹10
+            pts_discount = min(raw_discount, subtotal * 0.5)   # cap at 50% of subtotal
 
     after = subtotal - discount - pts_discount
     tax = round(after * 0.08, 2)
@@ -154,7 +155,11 @@ async def place_order(
     loyalty = lr.scalar_one_or_none()
     if payload.redeem_points > 0 and loyalty and loyalty.points >= payload.redeem_points:
         redeemed = payload.redeem_points
-        pts_discount = (redeemed / 500) * 5
+        raw_discount = (redeemed / 100) * 10  # 100 pts = ₹10
+        max_allowed = round(subtotal * 0.5, 2)  # cap at 50% of subtotal
+        pts_discount = min(raw_discount, max_allowed)
+        # Only deduct the points actually used
+        redeemed = int(pts_discount / 10) * 100
         loyalty.points -= redeemed
         db.add(LoyaltyTransaction(account_id=loyalty.id, points=-redeemed, description="Redeemed at checkout"))
 
@@ -162,7 +167,7 @@ async def place_order(
     after = subtotal - discount - pts_discount
     tax = round(after * 0.08, 2)
     total = round(after + delivery_fee + tax, 2)
-    points_earned = int(total * 10)
+    points_earned = int(subtotal / 10)  # 1 point per ₹10 spent (realistic rate)
 
     order = Order(
         order_number=_order_number(), user_id=current_user.id, address_id=payload.address_id,

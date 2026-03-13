@@ -658,7 +658,8 @@ export default function DairyApp() {
   const cartCount    = cart.reduce((s, i) => s + i.quantity, 0);
   const cartSubtotal = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
   const discount     = appliedPromo ? cartSubtotal * appliedPromo.discount_percent / 100 : 0;
-  const pointsDiscount = Math.floor(redeemPoints / 500) * 50;  // 500 pts = ₹50
+  const maxRedeemable = loyalty ? Math.min(Math.floor(loyalty.points / 100) * 100, Math.floor(cartSubtotal * 0.5 / 10) * 100) : 0;
+  const pointsDiscount = Math.min(Math.floor(redeemPoints / 100) * 10, cartSubtotal * 0.5);  // 100 pts = ₹10, max 50% of subtotal
   const cartTotal    = Math.max(0, cartSubtotal - discount - pointsDiscount + 29.00 + cartSubtotal * 0.05);
   const unreadNotifs = notifications.filter(n => !n.is_read).length;
 
@@ -1635,7 +1636,7 @@ export default function DairyApp() {
       { q: "When do you deliver?", a: "We deliver 7AM–9PM daily, 7 days a week." },
       { q: "What is the delivery fee?", a: "Just ₹29 per order. Free delivery on orders over ₹499!" },
       { q: "How do I return a product?", a: "Returns are accepted within 24 hours of delivery. Contact support with your order number." },
-      { q: "How do loyalty points work?", a: "You earn 1 point per ₹1 spent. Redeem 500 points for ₹50 off any order." },
+      { q: "How do loyalty points work?", a: "You earn 1 point per ₹10 spent. Redeem 100 points for ₹10 off — up to 50% of your order value." },
       { q: "Can I cancel an order?", a: "Yes! You can cancel pending or confirmed orders from the Orders screen before it's packed." },
       { q: "How do promo codes work?", a: "Enter your promo code at checkout. Codes like NEWUSER20 give 20% off your first order." },
       { q: "What areas do you deliver to?", a: "We currently cover most metro areas. Enter your address at checkout to confirm availability." },
@@ -1670,7 +1671,7 @@ export default function DairyApp() {
               order: `Your latest order is ${orders[0]?.status?.replace("_"," ") || "being processed"}! Check the Orders tab for details.`,
               delivery: "We deliver 7AM–9PM daily. ₹29 delivery fee — free on orders over ₹499! 🚚",
               return: "Returns accepted within 24 hours — tap 'New Ticket' to contact our team.",
-              points: `You have ${loyalty?.points || 0} loyalty points (${loyalty?.tier || "bronze"} tier)! 500 pts = ₹50 off.`,
+              points: `You have ${loyalty?.points || 0} loyalty points (${loyalty?.tier || "bronze"} tier)! 100 pts = ₹10 off, up to 50% of order.`,
               cancel: "You can cancel pending or confirmed orders from the Orders tab. Tap the order to see the Cancel button.",
             };
             const reply = Object.entries(REPLIES).find(([k]) => q.includes(k));
@@ -1903,7 +1904,7 @@ export default function DairyApp() {
                   <div style={{ fontSize: 28 }}>⭐</div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Loyalty Points</div>
-                    <div style={{ fontSize: 12, color: T.muted }}>{loyalty.points} pts · Redeem 500 = $5 off</div>
+                    <div style={{ fontSize: 12, color: T.muted }}>{loyalty.points} pts · Redeem 100 = ₹10 off (max 50%)</div>
                   </div>
                 </div>
               )}
@@ -1990,17 +1991,17 @@ export default function DairyApp() {
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>⭐ Use Loyalty Points</div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#f59e0b" }}>{loyalty.points} pts available</div>
                   </div>
-                  <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Every 500 points = ₹50 off. Points used: multiples of 500 only.</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Every 100 points = ₹10 off. Max 50% of order value. Points used: multiples of 100 only.</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <button onClick={() => setRedeemPoints(Math.max(0, redeemPoints - 500))} disabled={redeemPoints === 0}
+                    <button onClick={() => setRedeemPoints(Math.max(0, redeemPoints - 100))} disabled={redeemPoints === 0}
                       style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: redeemPoints === 0 ? T.cardBorder : T.tag, color: redeemPoints === 0 ? T.muted : T.accent, fontSize: 20, fontWeight: 900, cursor: redeemPoints === 0 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
                     <div style={{ flex: 1, textAlign: "center" }}>
                       <div style={{ fontSize: 20, fontWeight: 900, color: redeemPoints > 0 ? T.accent : T.muted }}>{redeemPoints} pts</div>
-                      {redeemPoints > 0 && <div style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>−₹{Math.floor(redeemPoints / 500) * 50} off</div>}
+                      {redeemPoints > 0 && <div style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>−₹{pointsDiscount.toFixed(2)} off</div>}
                     </div>
-                    <button onClick={() => setRedeemPoints(Math.min(Math.floor(loyalty.points / 500) * 500, redeemPoints + 500))}
-                      disabled={redeemPoints >= Math.floor(loyalty.points / 500) * 500}
-                      style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: redeemPoints >= Math.floor(loyalty.points / 500) * 500 ? T.cardBorder : T.hero, color: "#fff", fontSize: 20, fontWeight: 900, cursor: redeemPoints >= Math.floor(loyalty.points / 500) * 500 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                    <button onClick={() => setRedeemPoints(Math.min(maxRedeemable, redeemPoints + 100))}
+                      disabled={redeemPoints >= maxRedeemable}
+                      style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: redeemPoints >= maxRedeemable ? T.cardBorder : T.hero, color: "#fff", fontSize: 20, fontWeight: 900, cursor: redeemPoints >= maxRedeemable ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                   </div>
                 </div>
               )}
