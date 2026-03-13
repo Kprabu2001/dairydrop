@@ -272,18 +272,18 @@ const DARK = {
 
 const CATEGORIES = ["All", "Milk", "Cheese", "Yogurt", "Cream", "Butter"];
 
-const LabeledInput = ({ label, value, onChange, type, placeholder, extra, inputStyle, inputFocus, inputBlur }) => (
+const LabeledInput = ({ label, value, onChange, type, placeholder, extra, inputStyle, inputFocus, inputBlur, onKeyDown }) => (
   <div style={{ marginBottom: 18 }}>
     <div className="dd-field-label">{label}</div>
     <input
       value={value} onChange={onChange} type={type} placeholder={placeholder}
-      onFocus={inputFocus} onBlur={inputBlur}
+      onFocus={inputFocus} onBlur={inputBlur} onKeyDown={onKeyDown}
       style={{ ...inputStyle, ...(extra || {}) }}
     />
   </div>
 );
 
-const PasswordInput = ({ label, value, onChange, placeholder, hasError, showPassword, setShowPassword, dark, inputStyle, inputFocus, inputBlur }) => (
+const PasswordInput = ({ label, value, onChange, placeholder, hasError, showPassword, setShowPassword, dark, inputStyle, inputFocus, inputBlur, onKeyDown }) => (
   <div style={{ marginBottom: 18 }}>
     <div className="dd-field-label">{label}</div>
     <div style={{ position: "relative" }}>
@@ -291,7 +291,7 @@ const PasswordInput = ({ label, value, onChange, placeholder, hasError, showPass
         value={value} onChange={onChange}
         type={showPassword ? "text" : "password"}
         placeholder={placeholder}
-        onFocus={inputFocus} onBlur={inputBlur}
+        onFocus={inputFocus} onBlur={inputBlur} onKeyDown={onKeyDown}
         style={{ ...inputStyle, paddingRight: 52, borderColor: hasError ? "#ef5350" : undefined }}
       />
       <button onClick={() => setShowPassword(s => !s)} style={{
@@ -347,6 +347,15 @@ export default function DairyApp() {
   const [editProfilePhone, setEditProfilePhone] = useState("");
   const [editProfileSaving, setEditProfileSaving] = useState(false);
   const [editProfileSuccess, setEditProfileSuccess] = useState(false);
+  const [cpCurrent, setCpCurrent]         = useState("");
+  const [cpNew, setCpNew]                 = useState("");
+  const [cpConfirm, setCpConfirm]         = useState("");
+  const [cpSaving, setCpSaving]           = useState(false);
+  const [cpError, setCpError]             = useState("");
+  const [cpSuccess, setCpSuccess]         = useState(false);
+  const [cpShowCurrent, setCpShowCurrent] = useState(false);
+  const [cpShowNew, setCpShowNew]         = useState(false);
+  const [cpShowConfirm, setCpShowConfirm] = useState(false);
 
   // ── Stripe state ──────────────────────────────────────────
   const [showPayment, setShowPayment]         = useState(false);
@@ -363,6 +372,7 @@ export default function DairyApp() {
   const [adminOrders, setAdminOrders]         = useState([]);
   const [adminProducts, setAdminProducts]     = useState([]);
   const [adminLoading, setAdminLoading]       = useState(false);
+  const [productFormError, setProductFormError] = useState("");
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProduct, setEditingProduct]   = useState(null);
   const [productForm, setProductForm]         = useState({ name:"", description:"", price:"", unit:"", category:"Milk", emoji:"🥛", badge:"", stock:100, calories:"", protein:"", fat:"", carbs:"" });
@@ -664,24 +674,36 @@ export default function DairyApp() {
   const [adminConfirmPassword, setAdminConfirmPassword] = useState("");
 
   const doLogin = async () => {
-    setLoading(true); setError("");
+    setError("");
+    if (!loginEmail.trim()) { setError("Please enter your email address"); return; }
+    if (!loginPassword) { setError("Please enter your password"); return; }
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(loginEmail.trim())) { setError("Please enter a valid email address"); return; }
+    setLoading(true);
     try {
-      const { data } = await authAPI.login(loginEmail, loginPassword);
+      const { data } = await authAPI.login(loginEmail.trim(), loginPassword);
       localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("refresh_token", data.refresh_token);
       const me = await authAPI.me();
       setUser(me.data);
       setScreen("home");
     } catch (e) {
-      setError(e.response?.data?.detail || "Login failed");
+      setError(e.response?.data?.detail || "Invalid email or password");
     } finally { setLoading(false); }
   };
 
   const doRegister = async () => {
-    setLoading(true); setError("");
-    if (regPassword !== regConfirmPassword) { setError("Passwords do not match"); setLoading(false); return; }
+    setError("");
+    if (!regName.trim()) { setError("Please enter your full name"); return; }
+    if (!regEmail.trim()) { setError("Please enter your email address"); return; }
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(regEmail.trim())) { setError("Please enter a valid email address"); return; }
+    if (!regPassword) { setError("Please enter a password"); return; }
+    if (regPassword.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (regPassword !== regConfirmPassword) { setError("Passwords do not match"); return; }
+    setLoading(true);
     try {
-      const { data } = await authAPI.register({ email: regEmail, full_name: regName, password: regPassword });
+      const { data } = await authAPI.register({ email: regEmail.trim(), full_name: regName.trim(), password: regPassword });
       localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("refresh_token", data.refresh_token);
       const me = await authAPI.me();
@@ -693,10 +715,18 @@ export default function DairyApp() {
   };
 
   const doAdminRegister = async () => {
-    setLoading(true); setError("");
-    if (adminPassword !== adminConfirmPassword) { setError("Passwords do not match"); setLoading(false); return; }
+    setError("");
+    if (!adminName.trim()) { setError("Please enter your full name"); return; }
+    if (!adminEmail.trim()) { setError("Please enter your email address"); return; }
+    const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRe.test(adminEmail.trim())) { setError("Please enter a valid email address"); return; }
+    if (!adminPassword) { setError("Please enter a password"); return; }
+    if (adminPassword.length < 8) { setError("Password must be at least 8 characters"); return; }
+    if (adminPassword !== adminConfirmPassword) { setError("Passwords do not match"); return; }
+    if (!adminCode.trim()) { setError("Please enter the admin registration code"); return; }
+    setLoading(true);
     try {
-      const { data } = await authAPI.register({ email: adminEmail, full_name: adminName, password: adminPassword, role: "admin", admin_code: adminCode });
+      const { data } = await authAPI.register({ email: adminEmail.trim(), full_name: adminName.trim(), password: adminPassword, role: "admin", admin_code: adminCode.trim() });
       localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("refresh_token", data.refresh_token);
       const me = await authAPI.me();
@@ -704,7 +734,8 @@ export default function DairyApp() {
       setScreen("home");
     } catch (e) {
       setError(e.response?.data?.detail || "Admin registration failed");
-    } finally { setLoading(false); }};
+    } finally { setLoading(false); }
+  };
 
 
   if (screen === "onboarding") {
@@ -1249,8 +1280,8 @@ export default function DairyApp() {
           {/* ── SIGN IN ── */}
           {authTab === "signin" && (
             <div>
-              <LabeledInput label="Email address" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} type="email" placeholder="you@example.com" inputStyle={inputStyle} inputFocus={inputFocus} inputBlur={inputBlur} />
-              <PasswordInput label="Password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Your password" showPassword={showPassword} setShowPassword={setShowPassword} dark={dark} inputStyle={inputStyle} inputFocus={inputFocus} inputBlur={inputBlur} />
+              <LabeledInput label="Email address" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} type="email" placeholder="you@example.com" inputStyle={inputStyle} inputFocus={inputFocus} inputBlur={inputBlur} onKeyDown={e => e.key === "Enter" && doLogin()} />
+              <PasswordInput label="Password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} placeholder="Your password" showPassword={showPassword} setShowPassword={setShowPassword} dark={dark} inputStyle={inputStyle} inputFocus={inputFocus} inputBlur={inputBlur} onKeyDown={e => e.key === "Enter" && doLogin()} />
               <div style={{ textAlign: "right", fontSize: 13, color: "#43a047", fontWeight: 700, marginBottom: 24, cursor: "pointer", marginTop: -8 }}>
                 Forgot password?
               </div>
@@ -1386,7 +1417,7 @@ export default function DairyApp() {
         </div>
         <div style={{ ...S.scroll, padding: "20px 24px 80px", background: T.screenBg }}><div className="dd-form-wrap">
           <div style={{ ...S.card, padding: "18px 20px", marginBottom: 14, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontSize: 28, fontWeight: 900, color: T.accent }}>${p.price}</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: T.accent }}>₹{p.price}</div>
             {getQty(p.id) > 0 ? (
               <div style={{ display: "flex", alignItems: "center", gap: 14, background: T.tag, borderRadius: 16, padding: "10px 18px" }}>
                 <button onClick={() => updateCart(p.id, getQty(p.id) - 1)} style={{ background: "none", border: "none", color: T.accent, fontSize: 22, fontWeight: 900, cursor: "pointer" }}>−</button>
@@ -1420,7 +1451,7 @@ export default function DairyApp() {
                   <div key={r.id} onClick={() => setSelectedProduct(r)} style={{ ...S.card, padding: "14px", minWidth: 110, textAlign: "center", cursor: "pointer", flexShrink: 0 }}>
                     <div style={{ fontSize: 36 }}>{r.emoji}</div>
                     <div style={{ fontSize: 12, fontWeight: 800, color: T.text, marginTop: 6 }}>{r.name}</div>
-                    <div style={{ fontSize: 13, fontWeight: 900, color: T.accent, marginTop: 4 }}>${r.price}</div>
+                    <div style={{ fontSize: 13, fontWeight: 900, color: T.accent, marginTop: 4 }}>₹{r.price}</div>
                   </div>
                 ))}
               </div>
@@ -1497,7 +1528,7 @@ export default function DairyApp() {
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
                     <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>{p.unit}</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 15, fontWeight: 900, color: T.accent }}>${p.price}</span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: T.accent }}>₹{p.price}</span>
                       {p.stock === 0 && <span style={{ fontSize: 10, fontWeight: 800, color: "#ef4444", background: "#fee2e2", borderRadius: 6, padding: "2px 6px" }}>Out of stock</span>}
                     </div>
                   </div>
@@ -1562,9 +1593,9 @@ export default function DairyApp() {
   if (screen === "chat") {
     const FAQ = [
       { q: "When do you deliver?", a: "We deliver 7AM–9PM daily, 7 days a week." },
-      { q: "What is the delivery fee?", a: "Just $1.99 per order. Free delivery on orders over $30!" },
+      { q: "What is the delivery fee?", a: "Just ₹1.99 per order. Free delivery on orders over ₹30!" },
       { q: "How do I return a product?", a: "Returns are accepted within 24 hours of delivery. Contact support with your order number." },
-      { q: "How do loyalty points work?", a: "You earn 10 points per $1 spent. Redeem 500 points for $5 off any order." },
+      { q: "How do loyalty points work?", a: "You earn 10 points per ₹1 spent. Redeem 500 points for ₹5 off any order." },
       { q: "Can I cancel an order?", a: "Yes! You can cancel pending or confirmed orders from the Orders screen before it's packed." },
       { q: "How do promo codes work?", a: "Enter your promo code at checkout. Codes like NEWUSER20 give 20% off your first order." },
       { q: "What areas do you deliver to?", a: "We currently cover most metro areas. Enter your address at checkout to confirm availability." },
@@ -1597,9 +1628,9 @@ export default function DairyApp() {
             const q = msg.toLowerCase();
             const REPLIES = {
               order: `Your latest order is ${orders[0]?.status?.replace("_"," ") || "being processed"}! Check the Orders tab for details.`,
-              delivery: "We deliver 7AM–9PM daily. $1.99 delivery fee — free on orders over $30! 🚚",
+              delivery: "We deliver 7AM–9PM daily. ₹1.99 delivery fee — free on orders over ₹30! 🚚",
               return: "Returns accepted within 24 hours — tap 'New Ticket' to contact our team.",
-              points: `You have ${loyalty?.points || 0} loyalty points (${loyalty?.tier || "bronze"} tier)! 500 pts = $5 off.`,
+              points: `You have ${loyalty?.points || 0} loyalty points (${loyalty?.tier || "bronze"} tier)! 500 pts = ₹5 off.`,
               cancel: "You can cancel pending or confirmed orders from the Orders tab. Tap the order to see the Cancel button.",
             };
             const reply = Object.entries(REPLIES).find(([k]) => q.includes(k));
@@ -1687,7 +1718,7 @@ export default function DairyApp() {
                   <div style={{ fontSize: 11, fontWeight: 700, color: T.subtext, marginBottom: 4, textTransform: "uppercase" }}>Order # (optional)</div>
                   <select value={supportOrderId} onChange={e => setSupportOrderId(e.target.value)} style={{ ...S.input, padding: "11px 14px" }}>
                     <option value="">— Select an order —</option>
-                    {orders.map(o => <option key={o.id} value={o.id}>{o.order_number} · ${(o.total ?? 0).toFixed(2)}</option>)}
+                    {orders.map(o => <option key={o.id} value={o.id}>{o.order_number} · ₹{(o.total ?? 0).toFixed(2)}</option>)}
                   </select>
                 </div>
                 <div style={{ marginBottom: 16 }}>
@@ -1772,7 +1803,7 @@ export default function DairyApp() {
           </div>
           <div style={{ display: "flex", justifyContent: "space-between" }}>
             <span style={{ fontSize: 13, color: T.muted }}>Order Total</span>
-            <span style={{ fontSize: 22, fontWeight: 900, color: T.accent }}>${orderPlaced.total.toFixed(2)}</span>
+            <span style={{ fontSize: 22, fontWeight: 900, color: T.accent }}>₹{orderPlaced.total.toFixed(2)}</span>
           </div>
         </div>
         <button onClick={() => { setOrderPlaced(null); setScreen("tracking"); }} style={{ ...S.btn, marginBottom: 14 }}>Track My Order</button>
@@ -1800,7 +1831,7 @@ export default function DairyApp() {
                   <div style={{ width: 60, height: 60, background: T.tag, borderRadius: 16, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, flexShrink: 0 }}>{item.product.emoji}</div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontWeight: 800, fontSize: 14, color: T.text }}>{item.product.name}</div>
-                    <div style={{ fontSize: 15, fontWeight: 900, color: T.accent, marginTop: 4 }}>${(item.product.price * item.quantity).toFixed(2)}</div>
+                    <div style={{ fontSize: 15, fontWeight: 900, color: T.accent, marginTop: 4 }}>₹{(item.product.price * item.quantity).toFixed(2)}</div>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, background: T.tag, borderRadius: 12, padding: "6px 12px" }}>
                     <button onClick={() => updateCart(item.product_id, item.quantity - 1)} style={{ background: "none", border: "none", fontSize: 18, color: T.accent, cursor: "pointer", fontWeight: 800 }}>−</button>
@@ -1914,13 +1945,13 @@ export default function DairyApp() {
               {/* Summary */}
               <div style={{ ...S.card, padding: "20px", marginBottom: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: T.text, marginBottom: 14 }}>Order Summary</div>
-                {[["Subtotal", `$${cartSubtotal.toFixed(2)}`], ...(appliedPromo ? [[`Discount (${appliedPromo.discount_percent}%)`, `-$${discount.toFixed(2)}`]] : []), ["Delivery fee", "$1.99"], ["Tax (8%)", `$${(cartSubtotal * 0.08).toFixed(2)}`]].map(([l, v]) => (
+                {[["Subtotal", `₹${cartSubtotal.toFixed(2)}`], ...(appliedPromo ? [[`Discount (${appliedPromo.discount_percent}%)`, `-₹${discount.toFixed(2)}`]] : []), ["Delivery fee", "₹1.99"], ["Tax (8%)", `₹${(cartSubtotal * 0.08).toFixed(2)}`]].map(([l, v]) => (
                   <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14, color: l.startsWith("Discount") ? T.accent : T.subtext }}>
                     <span>{l}</span><span style={{ fontWeight: l.startsWith("Discount") ? 800 : 400 }}>{v}</span>
                   </div>
                 ))}
                 <div style={{ borderTop: `1px solid ${T.cardBorder}`, marginTop: 12, paddingTop: 12, display: "flex", justifyContent: "space-between", fontWeight: 900, fontSize: 16, color: T.text }}>
-                  <span>Total</span><span>${cartTotal.toFixed(2)}</span>
+                  <span>Total</span><span>₹{cartTotal.toFixed(2)}</span>
                 </div>
               </div>
             </>
@@ -1985,7 +2016,7 @@ export default function DairyApp() {
                         </svg>
                         Processing...
                       </>
-                    ) : `✓ Pay $${cartTotal.toFixed(2)}`}
+                    ) : `✓ Pay ₹${cartTotal.toFixed(2)}`}
                   </button>
                   <button onClick={() => { setShowPayment(false); setPaymentError(""); }} style={{ flex: 1, padding: "14px", background: T.card, color: T.text, border: `1.5px solid ${T.cardBorder}`, borderRadius: 16, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
                 </div>
@@ -2009,7 +2040,7 @@ export default function DairyApp() {
                 position: "relative",
               }}>
                 {selectedAddress
-                  ? `💳 Proceed to Payment · $${cartTotal.toFixed(2)}`
+                  ? `💳 Proceed to Payment · ₹${cartTotal.toFixed(2)}`
                   : "📍 Select a delivery address first"
                 }
               </button>
@@ -2056,10 +2087,10 @@ export default function DairyApp() {
               {showInvoice.items.map((item, i) => (
                 <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: T.subtext, marginBottom: 8, borderBottom: `1px solid ${T.cardBorder}`, paddingBottom: 8 }}>
                   <span>{item.product.name} × {item.quantity}</span>
-                  <span>${(item.total_price ?? 0).toFixed(2)}</span>
+                  <span>₹{(item.total_price ?? 0).toFixed(2)}</span>
                 </div>
               ))}
-              {[["Delivery", "$1.99"], ["Tax", `$${(showInvoice.tax ?? 0).toFixed(2)}`], ["Total", `$${(showInvoice.total ?? 0).toFixed(2)}`]].map(([l, v]) => (
+              {[["Delivery", "₹1.99"], ["Tax", `₹${(showInvoice.tax ?? 0).toFixed(2)}`], ["Total", `₹${(showInvoice.total ?? 0).toFixed(2)}`]].map(([l, v]) => (
                 <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: l === "Total" ? 16 : 14, fontWeight: l === "Total" ? 900 : 400, color: l === "Total" ? T.text : T.subtext, marginTop: 8 }}>
                   <span>{l}</span><span>{v}</span>
                 </div>
@@ -2135,7 +2166,7 @@ export default function DairyApp() {
                 <div style={{ fontSize: 13, color: T.muted, marginBottom: 10 }}>{new Date(order.created_at).toLocaleDateString()}</div>
                 {order.items.map((item, i) => <div key={i} style={{ fontSize: 14, color: T.subtext }}>• {item.product?.name} × {item.quantity}</div>)}
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, fontWeight: 900, color: T.text }}>
-                  <span>Total</span><span>${(order.total ?? 0).toFixed(2)}</span>
+                  <span>Total</span><span>₹{(order.total ?? 0).toFixed(2)}</span>
                 </div>
                 {order.status === "cancelled" ? (
                   <div style={{ marginTop: 12, padding: "10px 14px", background: "#ffebee", borderRadius: 10, fontSize: 12, color: "#c62828", fontWeight: 700, textAlign: "center" }}>
@@ -2215,6 +2246,108 @@ export default function DairyApp() {
       </>
     );
 
+    if (subScreen === "changePassword") {
+      const pwField = (label, value, setValue, show, setShow, placeholder) => (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: T.subtext, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
+          <div style={{ position: "relative" }}>
+            <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 16 }}>🔒</span>
+            <input
+              value={value}
+              onChange={e => { setValue(e.target.value); setCpError(""); setCpSuccess(false); }}
+              type={show ? "text" : "password"}
+              placeholder={placeholder}
+              style={{ ...S.input, paddingLeft: 42, paddingRight: 52 }}
+            />
+            <button onClick={() => setShow(s => !s)} style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", fontSize: 18, color: dark ? "#4a6e4b" : "#a5c9a5", padding: 0 }}>
+              {show ? "🙈" : "👁️"}
+            </button>
+          </div>
+        </div>
+      );
+
+      const doChangePassword = async () => {
+        setCpError(""); setCpSuccess(false);
+        if (!cpCurrent) { setCpError("Please enter your current password"); return; }
+        if (!cpNew) { setCpError("Please enter a new password"); return; }
+        if (cpNew.length < 8) { setCpError("New password must be at least 8 characters"); return; }
+        if (cpNew === cpCurrent) { setCpError("New password must be different from current password"); return; }
+        if (cpNew !== cpConfirm) { setCpError("Passwords do not match"); return; }
+        setCpSaving(true);
+        try {
+          await usersAPI.changePassword({ current_password: cpCurrent, new_password: cpNew });
+          setCpSuccess(true);
+          setCpCurrent(""); setCpNew(""); setCpConfirm("");
+        } catch (e) {
+          setCpError(e.response?.data?.detail || "Failed to update password");
+        } finally { setCpSaving(false); }
+      };
+
+      return wrap(
+        <>
+          <div className="dd-header-pad" style={{ background: T.hero, padding: "0 24px 24px", display: "flex", gap: 14, alignItems: "center" }}>
+            <button onClick={() => setSubScreen(null)} style={{ ...S.backBtn, background: "rgba(255,255,255,0.2)", color: "#fff" }}>←</button>
+            <div style={{ fontSize: 20, fontWeight: 900, color: "#fff" }}>Change Password</div>
+          </div>
+          <div style={{ ...S.scroll, padding: "28px 24px 100px", background: T.screenBg }}>
+
+            {/* Info card */}
+            <div style={{ ...S.card, padding: "16px 18px", marginBottom: 20, display: "flex", gap: 12, alignItems: "flex-start" }}>
+              <div style={{ fontSize: 22, flexShrink: 0 }}>💡</div>
+              <div style={{ fontSize: 13, color: T.subtext, lineHeight: 1.6 }}>
+                Use a strong password with at least <b style={{ color: T.text }}>8 characters</b>, mixing letters, numbers and symbols.
+              </div>
+            </div>
+
+            {/* Form card */}
+            <div style={{ ...S.card, padding: "24px" }}>
+              {pwField("Current Password", cpCurrent, setCpCurrent, cpShowCurrent, setCpShowCurrent, "Enter current password")}
+              <div style={{ height: 1, background: T.cardBorder, margin: "4px 0 20px" }} />
+              {pwField("New Password", cpNew, setCpNew, cpShowNew, setCpShowNew, "Enter new password")}
+              {pwField("Confirm New Password", cpConfirm, setCpConfirm, cpShowConfirm, setCpShowConfirm, "Repeat new password")}
+
+              {/* Password strength bar */}
+              {cpNew.length > 0 && (() => {
+                const strength = cpNew.length >= 12 && /[A-Z]/.test(cpNew) && /[0-9]/.test(cpNew) && /[^A-Za-z0-9]/.test(cpNew) ? 4
+                  : cpNew.length >= 10 && /[A-Z]/.test(cpNew) && /[0-9]/.test(cpNew) ? 3
+                  : cpNew.length >= 8 ? 2 : 1;
+                const labels = ["", "Weak", "Fair", "Strong", "Very Strong"];
+                const colors = ["", "#ef4444", "#f59e0b", "#22c55e", "#16a34a"];
+                return (
+                  <div style={{ marginBottom: 20, marginTop: -8 }}>
+                    <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>
+                      {[1,2,3,4].map(i => (
+                        <div key={i} style={{ flex: 1, height: 4, borderRadius: 99, background: i <= strength ? colors[strength] : T.cardBorder, transition: "background 0.3s" }} />
+                      ))}
+                    </div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: colors[strength] }}>{labels[strength]}</div>
+                  </div>
+                );
+              })()}
+
+              {/* Error */}
+              {cpError && (
+                <div style={{ background: "#ffebee", color: "#c62828", borderRadius: 12, padding: "12px 16px", marginBottom: 16, fontSize: 14, fontWeight: 600, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>⚠️</span> {cpError}
+                </div>
+              )}
+
+              {/* Success */}
+              {cpSuccess && (
+                <div style={{ background: "#e8f5e9", color: "#2e7d32", borderRadius: 12, padding: "12px 16px", marginBottom: 16, fontSize: 14, fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>✅</span> Password updated successfully! Please use your new password next time you sign in.
+                </div>
+              )}
+
+              <button onClick={doChangePassword} disabled={cpSaving} style={{ ...S.btn, opacity: cpSaving ? 0.7 : 1 }}>
+                {cpSaving ? "Updating…" : "Update Password"}
+              </button>
+            </div>
+          </div>
+        </>
+      );
+    }
+
     if (subScreen === "addresses") return wrap(
       <>
         <div className="dd-header-pad" style={{ background: T.hero, padding: "0 24px 24px", display: "flex", gap: 14, alignItems: "center" }}>
@@ -2266,7 +2399,7 @@ export default function DairyApp() {
               </div>
               <div style={{ ...S.card, padding: "20px" }}>
                 <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 14 }}>Your Referrals</div>
-                {[["Total Referrals", referral.total_referrals], ["Successful", referral.successful_referrals], ["Credits Earned", `$${referral.total_credit_earned.toFixed(2)}`]].map(([l, v]) => (
+                {[["Total Referrals", referral.total_referrals], ["Successful", referral.successful_referrals], ["Credits Earned", `₹${referral.total_credit_earned.toFixed(2)}`]].map(([l, v]) => (
                   <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${T.cardBorder}` }}>
                     <span style={{ fontSize: 14, color: T.subtext }}>{l}</span>
                     <span style={{ fontWeight: 900, color: T.text }}>{v}</span>
@@ -2285,14 +2418,15 @@ export default function DairyApp() {
     const tierColor = loyalty?.tier==="gold"?"#f59e0b":loyalty?.tier==="silver"?"#94a3b8":"#cd7f32";
     const allMenuItems = [
       { icon:"✏️", label:"Edit Profile",    sub:"Name, email & phone",          color:"#22c55e", action:()=>{ setEditProfileName(user?.full_name||""); setEditProfilePhone(user?.phone||""); setEditProfileSuccess(false); setSubScreen("editProfile"); } },
+      { icon:"🔒", label:"Change Password", sub:"Update your password",           color:"#ef4444", action:()=>{ setCpCurrent(""); setCpNew(""); setCpConfirm(""); setCpError(""); setCpSuccess(false); setSubScreen("changePassword"); } },
       { icon:"📍", label:"Saved Addresses", sub:`${addresses.length} location${addresses.length!==1?"s":""}`, color:"#3b82f6", action:()=>setSubScreen("addresses") },
       ...(user?.is_admin ? [{ icon:"⚙️", label:"Admin Panel", sub:"Manage orders & products", color:"#8b5cf6", action:async()=>{ setAdminTab("orders"); setAdminLoading(true); setScreen("admin"); await loadAdminOrders(); setAdminLoading(false); } }] : []),
-      { icon:"🎁", label:"Refer a Friend",  sub:"Give $5, get $5 credit",        color:"#f59e0b", action:()=>setSubScreen("referral") },
+      { icon:"🎁", label:"Refer a Friend",  sub:"Give ₹5, get ₹5 credit",        color:"#f59e0b", action:()=>setSubScreen("referral") },
       { icon:"🔔", label:"Notifications",   sub:`${unreadNotifs} unread`,         color:"#ef4444", action:()=>setScreen("notifications") },
       { icon:"💬", label:"Help & Support",  sub:"Chat with Daisy",               color:"#06b6d4", action:()=>setScreen("chat") },
     ];
-    const acctItems   = allMenuItems.slice(0, user?.is_admin ? 3 : 2);
-    const rewardItems = allMenuItems.slice(user?.is_admin ? 3 : 2);
+    const acctItems   = allMenuItems.slice(0, user?.is_admin ? 4 : 3);
+    const rewardItems = allMenuItems.slice(user?.is_admin ? 4 : 3);
 
     return wrap(
       <>
@@ -2580,7 +2714,7 @@ export default function DairyApp() {
                     <div style={{ fontSize:12, color:T.muted }}>{order.user?.full_name} · {order.user?.email}</div>
                     <div style={{ fontSize:11, color:T.muted }}>{new Date(order.created_at).toLocaleString()}</div>
                   </div>
-                  <div style={{ fontWeight:900, fontSize:16, color:T.accent }}>${order.total?.toFixed(2)}</div>
+                  <div style={{ fontWeight:900, fontSize:16, color:T.accent }}>₹{order.total?.toFixed(2)}</div>
                 </div>
                 <div style={{ fontSize:13, color:T.subtext, marginBottom:10 }}>
                   {order.items?.map(i => `${i.product?.name} ×${i.quantity}`).join(", ")}
@@ -2607,7 +2741,7 @@ export default function DairyApp() {
               <div>
                 <div className="dd-stats-grid" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 }}>
                   {[
-                    ["💰 Total Revenue", `$${adminStats.total_revenue.toFixed(2)}`, "#e8f5e9"],
+                    ["💰 Total Revenue", `₹${adminStats.total_revenue.toFixed(2)}`, "#e8f5e9"],
                     ["📦 Orders Today", adminStats.orders_today, "#e3f2fd"],
                     ["📅 This Week", adminStats.orders_this_week, "#fff8e1"],
                     ["👥 Total Users", adminStats.total_users, "#f3e5f5"],
@@ -2715,7 +2849,7 @@ export default function DairyApp() {
                   <div style={{ fontSize:15, fontWeight:900, color:T.text, marginBottom:16 }}>{editingProduct ? "✏️ Edit Product" : "➕ New Product"}</div>
                   {[
                     ["Name", "name", "text"], ["Description", "description", "text"],
-                    ["Price ($)", "price", "number"], ["Unit (e.g. 1 gallon)", "unit", "text"],
+                    ["Price (₹)", "price", "number"], ["Unit (e.g. 1 gallon)", "unit", "text"],
                     ["Emoji", "emoji", "text"], ["Badge (bestseller/new/popular)", "badge", "text"],
                     ["Stock", "stock", "number"], ["Calories", "calories", "number"],
                     ["Protein", "protein", "text"], ["Fat", "fat", "text"], ["Carbs", "carbs", "text"],
@@ -2731,15 +2865,28 @@ export default function DairyApp() {
                       {["Milk","Cheese","Yogurt","Cream","Butter"].map(c => <option key={c}>{c}</option>)}
                     </select>
                   </div>
+                  {productFormError && (
+                    <div style={{ background:"#ffebee", color:"#c62828", borderRadius:12, padding:"10px 14px", marginBottom:12, fontSize:13, fontWeight:600, display:"flex", alignItems:"center", gap:8 }}>
+                      <span>⚠️</span> {productFormError}
+                    </div>
+                  )}
                   <div style={{ display:"flex", gap:10 }}>
                     <button onClick={async () => {
-                      const payload = { ...PF, price: parseFloat(PF.price), stock: parseInt(PF.stock), calories: PF.calories ? parseInt(PF.calories) : null };
-                      if (editingProduct) { await api.put(`/products/${editingProduct.id}`, payload); }
-                      else { await api.post("/products/", payload); }
-                      setShowProductForm(false); setEditingProduct(null);
-                      await loadAdminProducts();
+                      setProductFormError("");
+                      if (!PF.name.trim()) { setProductFormError("Product name is required"); return; }
+                      if (!PF.price || isNaN(parseFloat(PF.price)) || parseFloat(PF.price) <= 0) { setProductFormError("Please enter a valid price greater than 0"); return; }
+                      if (!PF.unit.trim()) { setProductFormError("Unit is required (e.g. 1 litre, 500g)"); return; }
+                      if (!PF.stock || isNaN(parseInt(PF.stock)) || parseInt(PF.stock) < 0) { setProductFormError("Please enter a valid stock quantity"); return; }
+                      try {
+                        const payload = { ...PF, name: PF.name.trim(), unit: PF.unit.trim(), price: parseFloat(PF.price), stock: parseInt(PF.stock), calories: PF.calories ? parseInt(PF.calories) : null };
+                        if (editingProduct) { await api.put("/products/" + editingProduct.id, payload); }
+                        else { await api.post("/products/", payload); }
+                        setShowProductForm(false); setEditingProduct(null); setProductFormError("");
+                        await loadAdminProducts();
+                        showToast(editingProduct ? "Product updated!" : "Product created!", "success");
+                      } catch (e) { setProductFormError(e.response?.data?.detail || "Failed to save product"); }
                     }} style={{ ...S.btn, flex:1 }}>{editingProduct ? "Save Changes" : "Create Product"}</button>
-                    <button onClick={() => { setShowProductForm(false); setEditingProduct(null); }} style={{ flex:1, padding:"17px", background:T.card, color:T.text, border:`2px solid ${T.cardBorder}`, borderRadius:18, fontSize:16, fontWeight:800, cursor:"pointer" }}>Cancel</button>
+                    <button onClick={() => { setShowProductForm(false); setEditingProduct(null); setProductFormError(""); }} style={{ flex:1, padding:"17px", background:T.card, color:T.text, border:`2px solid ${T.cardBorder}`, borderRadius:18, fontSize:16, fontWeight:800, cursor:"pointer" }}>Cancel</button>
                   </div>
                 </div>
               )}
@@ -2750,12 +2897,12 @@ export default function DairyApp() {
                     <div style={{ fontSize:36 }}>{p.emoji}</div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontWeight:800, fontSize:14, color:T.text }}>{p.name}</div>
-                      <div style={{ fontSize:12, color:T.muted }}>${p.price} · {p.unit} · Stock: {p.stock}</div>
+                      <div style={{ fontSize:12, color:T.muted }}>₹{p.price} · {p.unit} · Stock: {p.stock}</div>
                       <div style={{ fontSize:11, color: p.is_active ? T.accent : T.danger }}>{p.is_active ? "● Active" : "● Inactive"}</div>
                     </div>
                     <div style={{ display:"flex", gap:8 }}>
                       <button onClick={() => { setEditingProduct(p); setProductForm({ name:p.name, description:p.description||"", price:p.price, unit:p.unit, category:p.category, emoji:p.emoji||"", badge:p.badge||"", stock:p.stock, calories:p.calories||"", protein:p.protein||"", fat:p.fat||"", carbs:p.carbs||"" }); setShowProductForm(true); }} style={{ background:T.tag, border:"none", borderRadius:10, padding:"8px 12px", color:T.tagText, fontWeight:800, cursor:"pointer", fontSize:13 }}>✏️</button>
-                      <button onClick={async () => { if(window.confirm("Deactivate this product?")) { await api.delete("/products/" + p.id); await loadAdminProducts(); } }} style={{ background:"#ffebee", border:"none", borderRadius:10, padding:"8px 12px", color:"#c62828", fontWeight:800, cursor:"pointer", fontSize:13 }}>🗑</button>
+                      <button onClick={async () => { if(window.confirm(`Delete "${p.name}"? This cannot be undone.`)) { try { await api.delete("/products/" + p.id); await loadAdminProducts(); showToast("Product deleted", "success"); } catch(e) { showToast(e.response?.data?.detail || "Failed to delete product"); } } }} style={{ background:"#ffebee", border:"none", borderRadius:10, padding:"8px 12px", color:"#c62828", fontWeight:800, cursor:"pointer", fontSize:13 }}>🗑</button>
                     </div>
                   </div>
                 ))
@@ -2837,7 +2984,7 @@ export default function DairyApp() {
                     <span style={{ fontSize: 11, fontWeight: 700, color: T.subtext }}>{product.avg_rating} ({product.review_count})</span>
                   </div>
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ fontSize: 16, fontWeight: 900, color: T.accent }}>${product.price}</div>
+                    <div style={{ fontSize: 16, fontWeight: 900, color: T.accent }}>₹{product.price}</div>
                     {getQty(product.id) > 0 ? (
                       <div style={{ display: "flex", alignItems: "center", gap: 8, background: T.tag, borderRadius: 12, padding: "5px 10px" }}>
                         <button onClick={() => updateCart(product.id, getQty(product.id) - 1)} style={{ background: "none", border: "none", color: T.accent, fontSize: 16, fontWeight: 900, cursor: "pointer" }}>−</button>
