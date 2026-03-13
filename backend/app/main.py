@@ -14,7 +14,7 @@ from app.api.routes import (
     auth, users, products, cart, orders,
     reviews, addresses, notifications, loyalty, referrals
 )
-from app.api.routes import support, admin as admin_router
+from app.api.routes import support, admin as admin_router, Wishlist as wishlist_router
 
 
 @asynccontextmanager
@@ -63,6 +63,7 @@ app.include_router(notifications.router,     prefix="/api/notifications", tags=[
 app.include_router(loyalty.router,           prefix="/api/loyalty",       tags=["Loyalty"])
 app.include_router(referrals.router,         prefix="/api/referrals",     tags=["Referrals"])
 app.include_router(support.router,           prefix="/api/support",       tags=["Support"])
+app.include_router(wishlist_router.router,   prefix="/api/wishlist",     tags=["Wishlist"])
 app.include_router(admin_router.router,      prefix="/api/admin",         tags=["Admin"])
 
 

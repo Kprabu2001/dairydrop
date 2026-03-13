@@ -122,6 +122,17 @@ class ProductCreate(BaseModel):
     carbs: Optional[str] = None
 
 
+# ── Wishlist ─────────────────────────────────────────────────
+class WishlistItemOut(BaseModel):
+    id: int
+    product_id: int
+    product: ProductOut
+    created_at: datetime
+ 
+    class Config:
+        from_attributes = True
+
+
 # ── Cart ────────────────────────────────────────────────────
 class CartItemOut(BaseModel):
     id: int

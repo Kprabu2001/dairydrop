@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   authAPI, productsAPI, cartAPI, ordersAPI,
   reviewsAPI, addressesAPI, notifsAPI, loyaltyAPI, referralsAPI, usersAPI,
-  supportAPI, adminAPI
+  supportAPI, adminAPI, wishlistAPI
 } from "./api";
 import api from "./api";
 
@@ -309,6 +309,7 @@ export default function DairyApp() {
   const [user, setUser]               = useState(null);
   const [products, setProducts]       = useState([]);
   const [cart, setCart]               = useState([]);
+  const [wishlist, setWishlist]       = useState([]);  // [{id, product_id, product, created_at}]
   const [orders, setOrders]           = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [loyalty, setLoyalty]         = useState(null);
@@ -320,6 +321,7 @@ export default function DairyApp() {
   const [productReviews, setProductReviews]   = useState([]);
   const [loading, setLoading]         = useState(false);
   const [error, setError]             = useState("");
+  const [toasts, setToasts]           = useState([]);  // [{id, msg, type}]
   const [onboardStep, setOnboardStep] = useState(0);
   const [promoCode, setPromoCode]     = useState("");
   const [appliedPromo, setAppliedPromo] = useState(null);
@@ -453,6 +455,13 @@ export default function DairyApp() {
     frame:   { display: "flex", flexDirection: "column", flex: 1, background: T.phoneBg, position: "relative", minHeight: "100vh" },
   };
 
+  // ── Global toast helper ─────────────────────────────────────
+  const showToast = React.useCallback((msg, type = "error") => {
+    const id = Date.now() + Math.random();
+    setToasts(t => [...t, { id, msg, type }]);
+    setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4000);
+  }, []);
+
   // wrap: responsive shell — sidebar on desktop, full-screen on mobile
   const wrap = (children) => (
     <div className="dd-shell" style={{ background: T.bg, fontFamily: "'Nunito','Segoe UI',sans-serif" }}>
@@ -465,6 +474,7 @@ export default function DairyApp() {
           <div style={{ flex: 1, padding: "16px 12px" }}>
             {[
               { id: "home", icon: "🏠", label: "Home" },
+              { id: "wishlist", icon: "❤️", label: "Wishlist", badge: wishlist.length || 0 },
               { id: "tracking", icon: "📦", label: "Orders" },
               { id: "cart", icon: "🛒", label: "Cart", badge: cartCount },
               { id: "chat", icon: "💬", label: "Support" },
@@ -528,6 +538,21 @@ export default function DairyApp() {
       )}
       <div className="dd-frame" style={{ background: T.phoneBg }}>
         {children}
+        {/* ── Global toast stack ── */}
+        <div style={{ position: "fixed", bottom: "calc(72px + env(safe-area-inset-bottom,0px))", left: "50%", transform: "translateX(-50%)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, pointerEvents: "none", width: "100%", padding: "0 16px" }}>
+          {toasts.map(t => (
+            <div key={t.id} style={{
+              background: t.type === "error" ? "linear-gradient(135deg,#ef4444,#dc2626)" : t.type === "success" ? "linear-gradient(135deg,#22c55e,#16a34a)" : "linear-gradient(135deg,#3b82f6,#2563eb)",
+              color: "#fff", borderRadius: 14, padding: "11px 18px", fontSize: 13, fontWeight: 700,
+              boxShadow: "0 4px 20px rgba(0,0,0,0.25)", maxWidth: 340, textAlign: "center",
+              animation: "toastIn 0.25s cubic-bezier(0.34,1.56,0.64,1)",
+              lineHeight: 1.4,
+            }}>
+              {t.type === "error" ? "⚠️ " : t.type === "success" ? "✅ " : "ℹ️ "}{t.msg}
+            </div>
+          ))}
+        </div>
+        <style>{`@keyframes toastIn { from { opacity:0; transform:translateY(12px) scale(0.95); } to { opacity:1; transform:translateY(0) scale(1); } }`}</style>
       </div>
     </div>
   );
@@ -541,8 +566,12 @@ export default function DairyApp() {
     } catch {}
   }, [category, search]);
 
+  const loadWishlist = useCallback(async () => {
+    try { const { data } = await api.get("/wishlist"); setWishlist(data); } catch {}
+  }, []);
+
   const loadCart = useCallback(async () => {
-    try { const { data } = await cartAPI.get(); setCart(data); } catch {}
+    try { const { data } = await cartAPI.get(); setCart(data); } catch (e) { if (e.response?.status !== 401) showToast("Couldn't load cart"); }
   }, []);
 
   const loadOrders = useCallback(async () => {
@@ -593,8 +622,9 @@ export default function DairyApp() {
   }, []);
 
   useEffect(() => { if (screen === "home") loadProducts(); }, [screen, loadProducts]);
-  useEffect(() => { if (user) { loadCart(); loadNotifications(); loadLoyalty(); loadAddresses(); } }, [user, loadCart, loadNotifications, loadLoyalty, loadAddresses]);
+  useEffect(() => { if (user) { loadCart(); loadNotifications(); loadLoyalty(); loadAddresses(); loadWishlist(); } }, [user, loadCart, loadNotifications, loadLoyalty, loadAddresses, loadWishlist]);
   useEffect(() => { if (screen === "tracking") loadOrders(); }, [screen, loadOrders]);
+  useEffect(() => { if (screen === "wishlist") loadWishlist(); }, [screen, loadWishlist]);
   useEffect(() => { if (subScreen === "referral") loadReferral(); }, [subScreen, loadReferral]);
 
   const cartCount    = cart.reduce((s, i) => s + i.quantity, 0);
@@ -604,10 +634,18 @@ export default function DairyApp() {
   const unreadNotifs = notifications.filter(n => !n.is_read).length;
 
   const updateCart = async (productId, quantity) => {
-    try { await cartAPI.update(productId, quantity); await loadCart(); } catch {}
+    try { await cartAPI.update(productId, quantity); await loadCart(); } catch { showToast("Couldn't update cart — please try again"); }
   };
 
   const getQty = (id) => cart.find(i => i.product_id === id)?.quantity || 0;
+  const isWishlisted = (id) => wishlist.some(w => w.product_id === id);
+  const toggleWishlist = async (productId, e) => {
+    e?.stopPropagation();
+    try {
+      const { data } = await wishlistAPI.toggle(productId);
+      setWishlist(data);
+    } catch { showToast("Couldn't update wishlist"); }
+  };
 
   // ── LOGIN ──────────────────────────────────────────────────
   const [loginEmail, setLoginEmail]       = useState("");
@@ -1335,6 +1373,10 @@ export default function DairyApp() {
         <div className="dd-header-pad" style={{ background: T.hero, padding: "0 24px 24px" }}>
           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 20 }}>
             <button onClick={() => setScreen("home")} style={{ ...S.backBtn, background: "rgba(255,255,255,0.2)", color: "#fff" }}>←</button>
+            <button onClick={(e) => toggleWishlist(p.id, e)} style={{ background: isWishlisted(p.id) ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.2)", border: "none", borderRadius: "50%", width: 40, height: 40, fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "transform 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.transform="scale(1.15)"}
+              onMouseLeave={e => e.currentTarget.style.transform="scale(1)"}
+            >{isWishlisted(p.id) ? "❤️" : "🤍"}</button>
           </div>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 90 }}>{p.emoji}</div>
@@ -1398,7 +1440,8 @@ export default function DairyApp() {
                   setReviewText("");
                   const { data } = await reviewsAPI.forProduct(p.id);
                   setProductReviews(data);
-                } catch {}
+                  showToast("Review posted!", "success");
+                } catch (e) { showToast(e.response?.data?.detail || "Couldn't post review"); }
               }} style={{ background: T.hero, color: "#fff", border: "none", borderRadius: 12, padding: "10px 16px", fontWeight: 800, cursor: "pointer", fontSize: 13, whiteSpace: "nowrap" }}>Post</button>
             </div>
             {productReviews.map((rv, i) => (
@@ -1419,6 +1462,73 @@ export default function DairyApp() {
   }
 
   // ── NOTIFICATIONS ──────────────────────────────────────────
+  // ── WISHLIST SCREEN ──────────────────────────────────────────
+  if (screen === "wishlist") return wrap(
+    <>
+      <div className="dd-header-pad" style={{ background: T.hero, padding: "0 20px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, paddingTop: 4 }}>
+          <button onClick={() => setScreen("home")} style={{ ...S.backBtn, background: "rgba(255,255,255,0.2)", color: "#fff" }}>←</button>
+          <div style={{ fontSize: 18, fontWeight: 900, color: "#fff" }}>❤️ My Wishlist</div>
+          {wishlist.length > 0 && <div style={{ marginLeft: "auto", background: "rgba(255,255,255,0.2)", color: "#fff", borderRadius: 12, padding: "3px 10px", fontSize: 12, fontWeight: 800 }}>{wishlist.length} items</div>}
+        </div>
+      </div>
+      <div style={{ ...S.scroll, padding: "16px 16px 90px", background: T.screenBg }}>
+        {wishlist.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div style={{ fontSize: 64, marginBottom: 16 }}>🤍</div>
+            <div style={{ fontSize: 18, fontWeight: 900, color: T.text, marginBottom: 8 }}>No saved items yet</div>
+            <div style={{ fontSize: 14, color: T.subtext, marginBottom: 24 }}>Tap the ❤️ on any product to save it here for later</div>
+            <button onClick={() => setScreen("home")} style={{ ...S.btn }}>Browse Products</button>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {wishlist.map(item => {
+              const p = item.product;
+              const qty = getQty(p.id);
+              return (
+                <div key={item.id} style={{ ...S.card, display: "flex", alignItems: "center", gap: 14, padding: "14px 16px" }}>
+                  {/* Emoji thumbnail */}
+                  <div onClick={async () => { setSelectedProduct(p); const { data } = await api.get("/reviews/product/" + p.id); setProductReviews(data); setScreen("product"); }}
+                    style={{ width: 60, height: 60, borderRadius: 16, background: dark ? T.tag : "#f1f8e9", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 32, flexShrink: 0, cursor: "pointer" }}>
+                    {p.emoji}
+                  </div>
+                  {/* Info */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name}</div>
+                    <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>{p.unit}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: T.accent }}>${p.price}</span>
+                      {p.stock === 0 && <span style={{ fontSize: 10, fontWeight: 800, color: "#ef4444", background: "#fee2e2", borderRadius: 6, padding: "2px 6px" }}>Out of stock</span>}
+                    </div>
+                  </div>
+                  {/* Actions */}
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                    {/* Remove from wishlist */}
+                    <button onClick={() => toggleWishlist(p.id)} style={{ background: "#fee2e2", border: "none", borderRadius: "50%", width: 30, height: 30, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>❤️</button>
+                    {/* Cart controls */}
+                    {qty > 0 ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 6, background: T.tag, borderRadius: 12, padding: "4px 8px" }}>
+                        <button onClick={() => updateCart(p.id, qty - 1)} style={{ background: "none", border: "none", color: T.accent, fontSize: 16, fontWeight: 900, cursor: "pointer" }}>−</button>
+                        <span style={{ fontWeight: 900, fontSize: 13, color: T.text, minWidth: 14, textAlign: "center" }}>{qty}</span>
+                        <button onClick={() => updateCart(p.id, qty + 1)} style={{ background: "none", border: "none", color: T.accent, fontSize: 16, fontWeight: 900, cursor: "pointer" }}>+</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => updateCart(p.id, 1)} disabled={p.stock === 0}
+                        style={{ background: p.stock === 0 ? T.muted : T.hero, color: "#fff", border: "none", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 800, cursor: p.stock === 0 ? "not-allowed" : "pointer" }}>
+                        {p.stock === 0 ? "Sold out" : "Add"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+      <BottomNav screen={screen} setScreen={setScreen} cartCount={cartCount} T={T} user={user} />
+    </>
+  );
+
   if (screen === "notifications") return wrap(
     <>
       <div className="dd-header-pad" style={{ background: T.hero, padding: "0 24px 24px" }}>
@@ -2096,7 +2206,7 @@ export default function DairyApp() {
                 await usersAPI.update(payload);
                 setUser(u => ({ ...u, ...payload }));
                 setEditProfileSuccess(true);
-              } catch {} finally { setEditProfileSaving(false); }
+              } catch (e) { showToast(e.response?.data?.detail || "Couldn't save profile"); } finally { setEditProfileSaving(false); }
             }} disabled={editProfileSaving} style={{ ...S.btn, opacity: editProfileSaving ? 0.7 : 1 }}>
               {editProfileSaving ? "Saving..." : "Save Changes"}
             </button>
@@ -2645,7 +2755,7 @@ export default function DairyApp() {
                     </div>
                     <div style={{ display:"flex", gap:8 }}>
                       <button onClick={() => { setEditingProduct(p); setProductForm({ name:p.name, description:p.description||"", price:p.price, unit:p.unit, category:p.category, emoji:p.emoji||"", badge:p.badge||"", stock:p.stock, calories:p.calories||"", protein:p.protein||"", fat:p.fat||"", carbs:p.carbs||"" }); setShowProductForm(true); }} style={{ background:T.tag, border:"none", borderRadius:10, padding:"8px 12px", color:T.tagText, fontWeight:800, cursor:"pointer", fontSize:13 }}>✏️</button>
-                      <button onClick={async () => { if(window.confirm("Deactivate this product?")) { await api.delete(`/products/${p.id}`); await loadAdminProducts(); } }} style={{ background:"#ffebee", border:"none", borderRadius:10, padding:"8px 12px", color:"#c62828", fontWeight:800, cursor:"pointer", fontSize:13 }}>🗑</button>
+                      <button onClick={async () => { if(window.confirm("Deactivate this product?")) { await api.delete("/products/" + p.id); await loadAdminProducts(); } }} style={{ background:"#ffebee", border:"none", borderRadius:10, padding:"8px 12px", color:"#c62828", fontWeight:800, cursor:"pointer", fontSize:13 }}>🗑</button>
                     </div>
                   </div>
                 ))
@@ -2712,6 +2822,11 @@ export default function DairyApp() {
                   {product.badge && <div style={{ position: "absolute", top: 10, left: 10, background: product.badge === "bestseller" ? "#ff6f00" : product.badge === "popular" ? "#6a1b9a" : "#00838f", color: "#fff", borderRadius: 8, padding: "3px 8px", fontSize: 9, fontWeight: 800, textTransform: "uppercase" }}>{product.badge}</div>}
                   {product.stock < 10 && product.stock > 0 && <div style={{ position: "absolute", top: 10, right: 10, background: "#e53935", color: "#fff", borderRadius: 8, padding: "3px 8px", fontSize: 9, fontWeight: 800 }}>Only {product.stock} left!</div>}
                   {product.stock === 0 && <div style={{ position: "absolute", top: 10, right: 10, background: "#757575", color: "#fff", borderRadius: 8, padding: "3px 8px", fontSize: 9, fontWeight: 800 }}>Out of Stock</div>}
+                  {/* Heart / wishlist toggle */}
+                  <button onClick={(e) => toggleWishlist(product.id, e)} style={{ position: "absolute", bottom: 8, right: 8, background: isWishlisted(product.id) ? "#fee2e2" : "rgba(255,255,255,0.85)", border: "none", borderRadius: "50%", width: 28, height: 28, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)", transition: "transform 0.15s", zIndex: 2 }}
+                    onMouseEnter={e => e.currentTarget.style.transform="scale(1.2)"}
+                    onMouseLeave={e => e.currentTarget.style.transform="scale(1)"}
+                  >{isWishlisted(product.id) ? "❤️" : "🤍"}</button>
                   <div style={{ fontSize: 48, textAlign: "center", marginTop: 10 }}>{product.emoji}</div>
                 </div>
                 <div style={{ padding: "12px 14px 14px" }}>
@@ -2775,9 +2890,9 @@ function AdminTicketReply({ ticket, T, S, onRefresh }) {
 function BottomNav({ screen, setScreen, cartCount, T, user }) {
   const tabs = [
     { id: "home", icon: "🏠", label: "Home" },
-    { id: "tracking", icon: "📦", label: "Orders" },
+    { id: "wishlist", icon: "❤️", label: "Saved" },
     { id: "cart", icon: "🛒", label: "Cart", badge: cartCount },
-    { id: "chat", icon: "💬", label: "Support" },
+    { id: "tracking", icon: "📦", label: "Orders" },
     { id: "profile", icon: "👤", label: "Profile" },
   ];
   return (
