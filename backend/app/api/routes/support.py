@@ -4,7 +4,7 @@ from sqlalchemy import select
 from typing import List
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin
 from app.models.user import User, Notification, NotifType
 from app.models.user import SupportTicket
 from app.schemas.schemas import SupportTicketCreate, SupportTicketOut, SupportTicketReply
@@ -52,33 +52,15 @@ async def list_my_tickets(
     return result.scalars().all()
 
 
-# ── User: Get single ticket ──────────────────────────────────
-@router.get("/{ticket_id}", response_model=SupportTicketOut)
-async def get_ticket(
-    ticket_id: int,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    result = await db.execute(
-        select(SupportTicket).where(
-            SupportTicket.id == ticket_id,
-            SupportTicket.user_id == current_user.id
-        )
-    )
-    ticket = result.scalar_one_or_none()
-    if not ticket:
-        raise HTTPException(status_code=404, detail="Ticket not found")
-    return ticket
-
+# ── IMPORTANT: Admin static routes MUST be registered BEFORE /{ticket_id}
+#    Otherwise FastAPI treats "admin" as an integer ticket_id → 422 error
 
 # ── Admin: List all tickets ──────────────────────────────────
 @router.get("/admin/all", response_model=List[SupportTicketOut])
 async def admin_list_tickets(
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
     result = await db.execute(
         select(SupportTicket).order_by(SupportTicket.created_at.desc())
     )
@@ -90,11 +72,9 @@ async def admin_list_tickets(
 async def admin_reply_ticket(
     ticket_id: int,
     payload: SupportTicketReply,
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
     result = await db.execute(select(SupportTicket).where(SupportTicket.id == ticket_id))
     ticket = result.scalar_one_or_none()
     if not ticket:
@@ -113,4 +93,23 @@ async def admin_reply_ticket(
     ))
     await db.commit()
     await db.refresh(ticket)
+    return ticket
+
+
+# ── User: Get single ticket — MUST be last (catches /{ticket_id}) ──────
+@router.get("/{ticket_id}", response_model=SupportTicketOut)
+async def get_ticket(
+    ticket_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(SupportTicket).where(
+            SupportTicket.id == ticket_id,
+            SupportTicket.user_id == current_user.id
+        )
+    )
+    ticket = result.scalar_one_or_none()
+    if not ticket:
+        raise HTTPException(status_code=404, detail="Ticket not found")
     return ticket

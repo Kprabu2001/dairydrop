@@ -1,11 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import List
 import random, string, time
 
 from app.core.database import get_db
-from app.core.security import get_current_user
+from app.core.security import get_current_user, get_current_admin
 from app.models.user import (
     User, CartItem, Order, OrderItem, OrderStatus, PromoCode,
     LoyaltyAccount, LoyaltyTransaction, Notification, NotifType, Product
@@ -19,6 +20,17 @@ def _order_number():
     return "#DY-" + "".join(random.choices(string.digits, k=4))
 
 
+# ── Shared eager-load helper — replaces all N+1 loops ────────
+def _orders_with_items():
+    """selectinload items+product in 2 queries regardless of result count."""
+    return (
+        select(Order)
+        .options(
+            selectinload(Order.items).selectinload(OrderItem.product)
+        )
+    )
+
+
 # ── Dummy Payment Intent (no Stripe) ─────────────────────────
 @router.post("/create-payment-intent")
 async def create_payment_intent(
@@ -26,12 +38,15 @@ async def create_payment_intent(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    cart_res = await db.execute(select(CartItem).where(CartItem.user_id == current_user.id))
+    cart_res = await db.execute(
+        select(CartItem)
+        .where(CartItem.user_id == current_user.id)
+        .options(selectinload(CartItem.product))
+    )
     cart_items = cart_res.scalars().all()
     if not cart_items:
         raise HTTPException(status_code=400, detail="Cart is empty")
-    for item in cart_items:
-        await db.refresh(item, ["product"])
+
     subtotal = sum(i.product.price * i.quantity for i in cart_items)
     discount = 0.0
     if payload.promo_code:
@@ -41,12 +56,14 @@ async def create_payment_intent(
         promo = pr.scalar_one_or_none()
         if promo:
             discount = subtotal * promo.discount_percent / 100
+
     pts_discount = 0.0
     if payload.redeem_points > 0:
         lr = await db.execute(select(LoyaltyAccount).where(LoyaltyAccount.user_id == current_user.id))
         loyalty = lr.scalar_one_or_none()
         if loyalty and loyalty.points >= payload.redeem_points:
             pts_discount = (payload.redeem_points / 500) * 5
+
     after = subtotal - discount - pts_discount
     tax = round(after * 0.08, 2)
     total = round(after + 1.99 + tax, 2)
@@ -54,45 +71,42 @@ async def create_payment_intent(
     return {"client_secret": dummy_id + "_secret", "amount": total, "payment_intent_id": dummy_id}
 
 
-# ── Admin Routes ──────────────────────────────────────────────
+# ── Admin Routes — registered BEFORE /{order_id} ─────────────
 @router.get("/admin/all")
 async def admin_list_all_orders(
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    result = await db.execute(select(Order).order_by(Order.created_at.desc()))
-    orders = result.scalars().all()
-    for order in orders:
-        await db.refresh(order, ["items", "user"])
-        for item in order.items:
-            await db.refresh(item, ["product"])
-    return orders
+    result = await db.execute(
+        _orders_with_items()
+        .options(selectinload(Order.user))
+        .order_by(Order.created_at.desc())
+    )
+    return result.scalars().all()
 
 
 @router.patch("/admin/{order_id}/status")
 async def admin_update_order_status(
     order_id: int,
     payload: dict,
-    current_user: User = Depends(get_current_user),
+    _: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin access required")
-    result = await db.execute(select(Order).where(Order.id == order_id))
+    result = await db.execute(
+        _orders_with_items().where(Order.id == order_id)
+    )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
+
     order.status = OrderStatus(payload["status"])
     db.add(Notification(
         user_id=order.user_id, type=NotifType.order, icon="🚚", title="Order Update",
         body=f"Your order {order.order_number} status: {payload['status'].replace('_', ' ').title()}"
     ))
     await db.commit()
-    await db.refresh(order, ["items"])
-    for item in order.items:
-        await db.refresh(item, ["product"])
+    # Refresh only the scalar fields — relationships already loaded
+    await db.refresh(order)
     return order
 
 
@@ -103,16 +117,24 @@ async def place_order(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # No Stripe verification — accept any payment_intent_id
-    cart_res = await db.execute(select(CartItem).where(CartItem.user_id == current_user.id))
+    # Load cart with products in one query
+    cart_res = await db.execute(
+        select(CartItem)
+        .where(CartItem.user_id == current_user.id)
+        .options(selectinload(CartItem.product))
+    )
     cart_items = cart_res.scalars().all()
     if not cart_items:
         raise HTTPException(status_code=400, detail="Cart is empty")
-    for item in cart_items:
-        await db.refresh(item, ["product"])
+
+    # Stock check
     for item in cart_items:
         if item.product.stock < item.quantity:
-            raise HTTPException(status_code=400, detail=f"Insufficient stock for {item.product.name}. Available: {item.product.stock}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Insufficient stock for {item.product.name}. Available: {item.product.stock}"
+            )
+
     subtotal = sum(i.product.price * i.quantity for i in cart_items)
     discount = 0.0
     promo_str = None
@@ -125,6 +147,7 @@ async def place_order(
             discount = subtotal * promo.discount_percent / 100
             promo.uses_count += 1
             promo_str = promo.code
+
     pts_discount = 0.0
     redeemed = 0
     lr = await db.execute(select(LoyaltyAccount).where(LoyaltyAccount.user_id == current_user.id))
@@ -134,11 +157,13 @@ async def place_order(
         pts_discount = (redeemed / 500) * 5
         loyalty.points -= redeemed
         db.add(LoyaltyTransaction(account_id=loyalty.id, points=-redeemed, description="Redeemed at checkout"))
+
     delivery_fee = 1.99
     after = subtotal - discount - pts_discount
     tax = round(after * 0.08, 2)
     total = round(after + delivery_fee + tax, 2)
     points_earned = int(total * 10)
+
     order = Order(
         order_number=_order_number(), user_id=current_user.id, address_id=payload.address_id,
         subtotal=subtotal, discount=discount + pts_discount, delivery_fee=delivery_fee,
@@ -146,29 +171,42 @@ async def place_order(
         points_redeemed=redeemed, notes=payload.notes, estimated_eta="25-35 min",
     )
     db.add(order)
-    await db.flush()
+    await db.flush()  # get order.id
+
+    # Decrement stock and clear cart — products already in memory
     for item in cart_items:
-        db.add(OrderItem(order_id=order.id, product_id=item.product_id, quantity=item.quantity,
-                         unit_price=item.product.price, total_price=item.product.price * item.quantity))
-        prod_res = await db.execute(select(Product).where(Product.id == item.product_id))
-        product = prod_res.scalar_one_or_none()
-        if product:
-            product.stock = max(0, product.stock - item.quantity)
+        db.add(OrderItem(
+            order_id=order.id, product_id=item.product_id, quantity=item.quantity,
+            unit_price=item.product.price, total_price=item.product.price * item.quantity
+        ))
+        item.product.stock = max(0, item.product.stock - item.quantity)
         await db.delete(item)
+
     if loyalty:
         loyalty.points += points_earned
         loyalty.total_earned += points_earned
-        if loyalty.total_earned >= 5000: loyalty.tier = "platinum"
-        elif loyalty.total_earned >= 2000: loyalty.tier = "gold"
-        elif loyalty.total_earned >= 500: loyalty.tier = "silver"
-        db.add(LoyaltyTransaction(account_id=loyalty.id, points=points_earned, description=f"Order {order.order_number}"))
-    db.add(Notification(user_id=current_user.id, type=NotifType.order, icon="🚚",
-                        title="Order Confirmed!", body=f"Your order {order.order_number} is on the way! ETA: 25-35 min."))
+        # Use enum values, not raw strings
+        from app.models.user import LoyaltyTier
+        if loyalty.total_earned >= 5000:   loyalty.tier = LoyaltyTier.platinum
+        elif loyalty.total_earned >= 2000: loyalty.tier = LoyaltyTier.gold
+        elif loyalty.total_earned >= 500:  loyalty.tier = LoyaltyTier.silver
+        db.add(LoyaltyTransaction(
+            account_id=loyalty.id, points=points_earned,
+            description=f"Order {order.order_number}"
+        ))
+
+    db.add(Notification(
+        user_id=current_user.id, type=NotifType.order, icon="🚚",
+        title="Order Confirmed!",
+        body=f"Your order {order.order_number} is on the way! ETA: 25-35 min."
+    ))
     await db.commit()
-    await db.refresh(order, ["items"])
-    for item in order.items:
-        await db.refresh(item, ["product"])
-    return order
+
+    # Load the completed order with relationships in 2 queries
+    result = await db.execute(
+        _orders_with_items().where(Order.id == order.id)
+    )
+    return result.scalar_one()
 
 
 # ── Cancel Order ──────────────────────────────────────────────
@@ -179,70 +217,84 @@ async def cancel_order(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    result = await db.execute(select(Order).where(Order.id == order_id, Order.user_id == current_user.id))
+    result = await db.execute(
+        _orders_with_items()
+        .where(Order.id == order_id, Order.user_id == current_user.id)
+    )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
     if order.status not in (OrderStatus.pending, OrderStatus.confirmed):
         raise HTTPException(status_code=400, detail=f"Cannot cancel order with status '{order.status.value}'.")
-    order.status = OrderStatus.cancelled
-    await db.refresh(order, ["items"])
-    for item in order.items:
-        await db.refresh(item, ["product"])
-        prod_res = await db.execute(select(Product).where(Product.id == item.product_id))
-        product = prod_res.scalar_one_or_none()
-        if product:
-            product.stock += item.quantity
 
-    # Adjust loyalty: refund redeemed points, deduct earned points
+    order.status = OrderStatus.cancelled
+
+    # Restore stock — products already loaded via selectinload
+    for item in order.items:
+        item.product.stock += item.quantity
+
+    # Adjust loyalty
     lr = await db.execute(select(LoyaltyAccount).where(LoyaltyAccount.user_id == current_user.id))
     loyalty = lr.scalar_one_or_none()
     if loyalty:
+        from app.models.user import LoyaltyTier
         if order.points_redeemed > 0:
             loyalty.points += order.points_redeemed
-            db.add(LoyaltyTransaction(account_id=loyalty.id, points=order.points_redeemed,
-                                      description=f"Points refunded for cancelled order {order.order_number}"))
+            db.add(LoyaltyTransaction(
+                account_id=loyalty.id, points=order.points_redeemed,
+                description=f"Points refunded for cancelled order {order.order_number}"
+            ))
         if order.points_earned > 0:
             loyalty.points = max(0, loyalty.points - order.points_earned)
             loyalty.total_earned = max(0, loyalty.total_earned - order.points_earned)
-            if loyalty.total_earned >= 5000: loyalty.tier = "platinum"
-            elif loyalty.total_earned >= 2000: loyalty.tier = "gold"
-            elif loyalty.total_earned >= 500: loyalty.tier = "silver"
-            else: loyalty.tier = "bronze"
-            db.add(LoyaltyTransaction(account_id=loyalty.id, points=-order.points_earned,
-                                      description=f"Points reversed for cancelled order {order.order_number}"))
+            if loyalty.total_earned >= 5000:   loyalty.tier = LoyaltyTier.platinum
+            elif loyalty.total_earned >= 2000: loyalty.tier = LoyaltyTier.gold
+            elif loyalty.total_earned >= 500:  loyalty.tier = LoyaltyTier.silver
+            else:                              loyalty.tier = LoyaltyTier.bronze
+            db.add(LoyaltyTransaction(
+                account_id=loyalty.id, points=-order.points_earned,
+                description=f"Points reversed for cancelled order {order.order_number}"
+            ))
 
-    db.add(Notification(user_id=current_user.id, type=NotifType.order, icon="❌",
-                        title="Order Cancelled",
-                        body=f"Your order {order.order_number} has been cancelled.{' Reason: ' + payload.reason if payload.reason else ''}"))
+    db.add(Notification(
+        user_id=current_user.id, type=NotifType.order, icon="❌",
+        title="Order Cancelled",
+        body=f"Your order {order.order_number} has been cancelled."
+              + (f" Reason: {payload.reason}" if payload.reason else "")
+    ))
     await db.commit()
-    await db.refresh(order, ["items"])
-    for item in order.items:
-        await db.refresh(item, ["product"])
-    return order
+
+    result = await db.execute(_orders_with_items().where(Order.id == order.id))
+    return result.scalar_one()
 
 
 # ── List Orders ───────────────────────────────────────────────
 @router.get("", response_model=List[OrderOut])
 @router.get("/", response_model=List[OrderOut], include_in_schema=False)
-async def list_orders(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Order).where(Order.user_id == current_user.id).order_by(Order.created_at.desc()))
-    orders = result.scalars().all()
-    for order in orders:
-        await db.refresh(order, ["items"])
-        for item in order.items:
-            await db.refresh(item, ["product"])
-    return orders
+async def list_orders(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        _orders_with_items()
+        .where(Order.user_id == current_user.id)
+        .order_by(Order.created_at.desc())
+    )
+    return result.scalars().all()
 
 
 # ── Get Single Order ──────────────────────────────────────────
 @router.get("/{order_id}", response_model=OrderOut)
-async def get_order(order_id: int, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Order).where(Order.id == order_id, Order.user_id == current_user.id))
+async def get_order(
+    order_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        _orders_with_items()
+        .where(Order.id == order_id, Order.user_id == current_user.id)
+    )
     order = result.scalar_one_or_none()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    await db.refresh(order, ["items"])
-    for item in order.items:
-        await db.refresh(item, ["product"])
     return order

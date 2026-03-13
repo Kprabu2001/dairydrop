@@ -36,6 +36,18 @@ const RESPONSIVE_CSS = `
     min-height: 100vh;
   }
 
+  /* Mobile: allow sticky bottom nav to work and content to scroll */
+  @media (max-width: 767px) {
+    .dd-frame {
+      overflow: visible;
+      min-height: 100dvh;
+    }
+    .dd-shell {
+      min-height: 100dvh;
+    }
+  }
+
+
   /* Desktop sidebar nav */
   .dd-sidebar {
     display: none;
@@ -66,10 +78,17 @@ const RESPONSIVE_CSS = `
 
   /* Bottom nav: only on mobile */
   .dd-bottomnav {
-    position: sticky;
+    position: fixed;
     bottom: 0;
     left: 0; right: 0;
     z-index: 50;
+  }
+
+  /* Ensure scroll content clears fixed bottom nav on mobile */
+  @media (max-width: 767px) {
+    .dd-scroll-pad-bottom {
+      padding-bottom: calc(70px + env(safe-area-inset-bottom, 0px)) !important;
+    }
   }
 
   /* Product grid: 2 cols mobile, 3-4 cols desktop */
@@ -331,6 +350,7 @@ export default function DairyApp() {
   const [showPayment, setShowPayment]         = useState(false);
   const [paymentLoading, setPaymentLoading]   = useState(false);
   const [paymentError, setPaymentError]       = useState("");
+  const [addressHighlight, setAddressHighlight] = useState(false);
   const [cardNumber, setCardNumber]           = useState("");
   const [cardExpiry, setCardExpiry]           = useState("");
   const [cardCvc, setCardCvc]                 = useState("");
@@ -428,7 +448,7 @@ export default function DairyApp() {
     card:    { background: T.card, borderRadius: 20, boxShadow: "0 2px 12px rgba(0,0,0,0.06)" },
     input:   { width: "100%", padding: "14px 16px", border: `2px solid ${T.inputBorder}`, borderRadius: 14, fontSize: 15, background: T.input, outline: "none", color: T.text, boxSizing: "border-box" },
     backBtn: { background: T.card, border: "none", borderRadius: 12, padding: "8px 12px", fontSize: 18, cursor: "pointer", color: T.text },
-    scroll:  { flex: 1, overflowY: "auto", overflowX: "hidden" },
+    scroll:  { flex: 1, overflowY: "auto", overflowX: "hidden", paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))" },
     // No more fixed phone frame — full responsive layout
     frame:   { display: "flex", flexDirection: "column", flex: 1, background: T.phoneBg, position: "relative", minHeight: "100vh" },
   };
@@ -561,6 +581,17 @@ export default function DairyApp() {
       });
     }
   }, []);
+  // ── Listen for forced logout from api.js (expired refresh token) ──
+  useEffect(() => {
+    const handleForceLogout = () => {
+      setUser(null);
+      setCart([]);
+      setScreen("login");
+    };
+    window.addEventListener("auth:logout", handleForceLogout);
+    return () => window.removeEventListener("auth:logout", handleForceLogout);
+  }, []);
+
   useEffect(() => { if (screen === "home") loadProducts(); }, [screen, loadProducts]);
   useEffect(() => { if (user) { loadCart(); loadNotifications(); loadLoyalty(); loadAddresses(); } }, [user, loadCart, loadNotifications, loadLoyalty, loadAddresses]);
   useEffect(() => { if (screen === "tracking") loadOrders(); }, [screen, loadOrders]);
@@ -1695,18 +1726,77 @@ export default function DairyApp() {
                 </div>
               )}
               {/* Address */}
-              {addresses.length > 0 && (
-                <div style={{ ...S.card, padding: "16px 20px", marginBottom: 14 }}>
-                  <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 10 }}>📍 Deliver to</div>
+              {addresses.length === 0 ? (
+                <div data-address-section style={{
+                  ...S.card, padding: "20px", marginBottom: 14,
+                  border: `2px dashed ${addressHighlight ? "#ef4444" : (dark ? "rgba(59,130,246,0.4)" : "#93c5fd")}`,
+                  background: addressHighlight ? (dark ? "rgba(239,68,68,0.08)" : "#fff1f2") : (dark ? "rgba(59,130,246,0.06)" : "#eff6ff"),
+                  boxShadow: addressHighlight ? "0 0 0 3px rgba(239,68,68,0.2)" : "none",
+                  transition: "border-color 0.3s, background 0.3s, box-shadow 0.3s",
+                }}>
+                  <style>{`@keyframes addr-shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 40%{transform:translateX(6px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }`}</style>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 14, animation: addressHighlight ? "addr-shake 0.45s ease" : "none" }}>
+                    <div style={{ fontSize: 36, lineHeight: 1, flexShrink: 0 }}>📍</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 900, color: addressHighlight ? "#ef4444" : (dark ? "#93c5fd" : "#1d4ed8"), marginBottom: 4, transition: "color 0.3s" }}>
+                        {addressHighlight ? "⚠️ Delivery address required!" : "No delivery address yet"}
+                      </div>
+                      <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.5, marginBottom: 14 }}>
+                        Add a delivery address to place your order. It only takes a few seconds!
+                      </div>
+                      <button
+                        onClick={() => { setScreen("profile"); setSubScreen("addresses"); }}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 8,
+                          padding: "11px 20px", borderRadius: 14, border: "none",
+                          background: addressHighlight ? "#ef4444" : (dark ? "#2563eb" : "#1d4ed8"),
+                          color: "#fff", fontWeight: 800, fontSize: 14,
+                          cursor: "pointer", fontFamily: "inherit",
+                          boxShadow: addressHighlight ? "0 4px 14px rgba(239,68,68,0.35)" : "0 4px 14px rgba(29,78,216,0.3)",
+                          transition: "background 0.3s, box-shadow 0.3s",
+                        }}
+                      >
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+                          <circle cx="12" cy="9" r="2.5"/>
+                        </svg>
+                        Add Delivery Address
+                        <span style={{ fontSize: 16, marginLeft: 2 }}>→</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div data-address-section style={{
+                  ...S.card, padding: "16px 20px", marginBottom: 14,
+                  border: `2px solid ${addressHighlight ? "#ef4444" : "transparent"}`,
+                  boxShadow: addressHighlight ? "0 0 0 3px rgba(239,68,68,0.15)" : undefined,
+                  transition: "border-color 0.3s, box-shadow 0.3s",
+                }}>
+                  <style>{`@keyframes addr-shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-6px)} 40%{transform:translateX(6px)} 60%{transform:translateX(-4px)} 80%{transform:translateX(4px)} }`}</style>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, animation: addressHighlight ? "addr-shake 0.45s ease" : "none" }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: addressHighlight ? "#ef4444" : T.text, transition: "color 0.3s" }}>
+                      📍 {addressHighlight ? "Please select a delivery address!" : "Deliver to"}
+                    </div>
+                    <button
+                      onClick={() => { setScreen("profile"); setSubScreen("addresses"); }}
+                      style={{ fontSize: 12, fontWeight: 700, color: T.accent, background: "none", border: "none", cursor: "pointer", padding: 0, fontFamily: "inherit" }}
+                    >
+                      + Add New
+                    </button>
+                  </div>
                   {addresses.map(a => (
                     <div key={a.id} onClick={() => setSelectedAddress(a.id)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", borderBottom: `1px solid ${T.cardBorder}`, cursor: "pointer" }}>
-                      <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${T.accent}`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${T.accent}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                         {selectedAddress === a.id && <div style={{ width: 10, height: 10, borderRadius: "50%", background: T.accent }} />}
                       </div>
-                      <div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 13, fontWeight: 800, color: T.text }}>{a.label}</div>
-                        <div style={{ fontSize: 11, color: T.muted }}>{a.full_address}</div>
+                        <div style={{ fontSize: 11, color: T.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.full_address}</div>
                       </div>
+                      {selectedAddress === a.id && (
+                        <div style={{ fontSize: 10, fontWeight: 800, color: T.accent, background: dark ? "rgba(34,197,94,0.15)" : "#dcfce7", padding: "3px 8px", borderRadius: 99, flexShrink: 0 }}>DELIVERING HERE</div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1794,10 +1884,24 @@ export default function DairyApp() {
               </div>
             ) : (
               <button onClick={() => {
-                if (!selectedAddress) return alert("Please add a delivery address first");
+                if (!selectedAddress) {
+                  // Scroll up to show the address section clearly
+                  document.querySelector("[data-address-section]")?.scrollIntoView({ behavior: "smooth", block: "center" });
+                  setAddressHighlight(true);
+                  setTimeout(() => setAddressHighlight(false), 2000);
+                  return;
+                }
                 setShowPayment(true); setPaymentError("");
-              }} style={{ ...S.btn, boxShadow: "0 8px 24px rgba(46,125,50,0.28)" }}>
-                💳 Proceed to Payment · ${cartTotal.toFixed(2)}
+              }} style={{
+                ...S.btn,
+                boxShadow: selectedAddress ? "0 8px 24px rgba(46,125,50,0.28)" : "none",
+                opacity: selectedAddress ? 1 : 0.65,
+                position: "relative",
+              }}>
+                {selectedAddress
+                  ? `💳 Proceed to Payment · $${cartTotal.toFixed(2)}`
+                  : "📍 Select a delivery address first"
+                }
               </button>
             )}
           </div>
@@ -2142,6 +2246,9 @@ export default function DairyApp() {
           .pf2-body { max-width:680px; margin:0 auto; padding:16px 14px 90px; }
           @media(min-width:768px){ .pf2-body { padding:20px 20px 60px; } }
 
+          /* Hide mobile-only elements on desktop (sidebar already has them) */
+          @media(min-width:768px){ .pf2-mobile-only { display:none !important; } }
+
           /* LOYALTY BANNER */
           .pf2-loy {
             background:${dark
@@ -2272,6 +2379,42 @@ export default function DairyApp() {
                   <div className="pf2-ch">›</div>
                 </div>
               ))}
+            </div>
+
+            {/* DARK MODE TOGGLE — mobile only */}
+            <div className="pf2-card pf2-mobile-only" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div className="pf2-ic" style={{ background: dark ? "rgba(251,191,36,0.15)" : "rgba(99,102,241,0.12)" }}>{dark ? "☀️" : "🌙"}</div>
+                <div>
+                  <div className="pf2-rl">{dark ? "Light Mode" : "Dark Mode"}</div>
+                  <div className="pf2-rs">Switch appearance</div>
+                </div>
+              </div>
+              <div onClick={() => setDark(d => !d)} style={{ width: 42, height: 24, borderRadius: 99, background: dark ? "#22c55e" : "#d1d5db", cursor: "pointer", position: "relative", transition: "background 0.25s", flexShrink: 0 }}>
+                <div style={{ position: "absolute", top: 4, left: dark ? 22 : 4, width: 16, height: 16, borderRadius: "50%", background: "#fff", boxShadow: "0 1px 4px rgba(0,0,0,0.2)", transition: "left 0.22s cubic-bezier(0.34,1.56,0.64,1)" }} />
+              </div>
+            </div>
+
+            {/* SIGN OUT — mobile only (desktop has it in sidebar) */}
+            <div className="pf2-mobile-only" style={{ marginBottom: 8 }}>
+              <button
+                onClick={() => { localStorage.clear(); setUser(null); setCart([]); setScreen("login"); }}
+                style={{
+                  width: "100%", display: "flex", alignItems: "center", justifyContent: "center", gap: 10,
+                  padding: "15px", borderRadius: 16, border: "none",
+                  background: "linear-gradient(135deg, #ef4444 0%, #dc2626 100%)",
+                  color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer",
+                  boxShadow: "0 4px 16px rgba(239,68,68,0.3)",
+                  fontFamily: "inherit",
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                  <polyline points="16 17 21 12 16 7"/>
+                  <line x1="21" y1="12" x2="9" y2="12"/>
+                </svg>
+                Sign Out
+              </button>
             </div>
 
           </div>
@@ -2536,7 +2679,7 @@ export default function DairyApp() {
           <input value={search} onChange={e => { setSearch(e.target.value); loadProducts(); }} placeholder="Search dairy products..." style={{ background: "none", border: "none", outline: "none", color: "#fff", fontSize: 14, flex: 1 }} />
         </div>
       </div>
-      <div style={{ ...S.scroll, paddingBottom: 20, background: T.screenBg }}>
+      <div style={{ ...S.scroll, paddingBottom: "calc(80px + env(safe-area-inset-bottom, 16px))", background: T.screenBg }}>
         <div style={{ margin: "16px 20px", background: dark ? "linear-gradient(135deg,#1a3a1b,#2a4a2b)" : "linear-gradient(135deg,#e8f5e9,#c8e6c9)", borderRadius: 24, padding: "20px", position: "relative", overflow: "hidden" }}>
           <div style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", fontSize: 72, opacity: 0.85, filter: "drop-shadow(0 2px 6px rgba(0,0,0,0.12))" }}>🐄</div>
           <div style={{ fontSize: 12, fontWeight: 800, color: T.accent, textTransform: "uppercase", letterSpacing: 1 }}>New User Offer</div>
