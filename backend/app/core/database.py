@@ -19,6 +19,7 @@ engine = create_async_engine(
     connect_args={
         "ssl":ssl_context,
         "statement_cache_size": 0,
+        "prepared_statement_cache_size": 0,
     },
 )
 
