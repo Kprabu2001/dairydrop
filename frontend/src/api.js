@@ -105,9 +105,10 @@ export const ordersAPI = {
 
 // ── Reviews ─────────────────────────────────────────────────
 export const reviewsAPI = {
-  forProduct: (id)  => api.get(`/reviews/product/${id}`),
+  forProduct: (id)  => api.get("/reviews/product/" + id),
+  canReview:  (id)  => api.get("/reviews/can-review/" + id),
   create: (data)    => api.post("/reviews", data),
-  delete: (id)      => api.delete(`/reviews/${id}`),
+  delete: (id)      => api.delete("/reviews/" + id),
 };
 
 // ── Addresses ───────────────────────────────────────────────
