@@ -50,8 +50,8 @@ async def get_transactions(current_user: User = Depends(get_current_user), db: A
 
 @router.post("/redeem")
 async def redeem_points(payload: RedeemPointsRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    if payload.points < 500 or payload.points % 500 != 0:
-        raise HTTPException(status_code=400, detail="Redeem in multiples of 500 points")
+    if payload.points < 100 or payload.points % 100 != 0:
+        raise HTTPException(status_code=400, detail="Redeem in multiples of 100 points")
     result = await db.execute(select(LoyaltyAccount).where(LoyaltyAccount.user_id == current_user.id))
     loyalty = result.scalar_one_or_none()
     if not loyalty or loyalty.points < payload.points:
@@ -59,5 +59,5 @@ async def redeem_points(payload: RedeemPointsRequest, current_user: User = Depen
     loyalty.points -= payload.points
     db.add(LoyaltyTransaction(account_id=loyalty.id, points=-payload.points, description="Manual redemption"))
     await db.commit()
-    credit = (payload.points / 500) * 5
-    return {"message": f"Redeemed {payload.points} pts for ${credit:.2f} credit"}
+    credit = (payload.points / 100) * 10
+    return {"message": f"Redeemed {payload.points} pts for ₹{credit:.2f} credit"}

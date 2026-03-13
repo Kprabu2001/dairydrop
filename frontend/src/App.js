@@ -660,7 +660,9 @@ export default function DairyApp() {
   const discount     = appliedPromo ? cartSubtotal * appliedPromo.discount_percent / 100 : 0;
   const maxRedeemable = loyalty ? Math.min(Math.floor(loyalty.points / 100) * 100, Math.floor(cartSubtotal * 0.5 / 10) * 100) : 0;
   const pointsDiscount = Math.min(Math.floor(redeemPoints / 100) * 10, cartSubtotal * 0.5);  // 100 pts = ₹10, max 50% of subtotal
-  const cartTotal    = Math.max(0, cartSubtotal - discount - pointsDiscount + 29.00 + cartSubtotal * 0.05);
+  const afterDiscount = cartSubtotal - discount - pointsDiscount;
+  const deliveryFee  = afterDiscount >= 499 ? 0 : 29;
+  const cartTotal    = Math.max(0, afterDiscount + deliveryFee + cartSubtotal * 0.05);
   const unreadNotifs = notifications.filter(n => !n.is_read).length;
 
   const updateCart = async (productId, quantity) => {
@@ -2005,10 +2007,30 @@ export default function DairyApp() {
                   </div>
                 </div>
               )}
+              {/* Free delivery progress banner */}
+              {afterDiscount < 499 && (
+                <div style={{ background: dark ? "rgba(34,197,94,0.1)" : "#f0fdf4", border: `1px solid ${dark ? "rgba(34,197,94,0.2)" : "#bbf7d0"}`, borderRadius: 12, padding: "10px 14px", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>🚚</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: dark ? "#4ade80" : "#15803d" }}>
+                      Add ₹{(499 - afterDiscount).toFixed(2)} more for FREE delivery!
+                    </div>
+                    <div style={{ marginTop: 5, height: 4, borderRadius: 99, background: dark ? "rgba(255,255,255,0.1)" : "#dcfce7", overflow: "hidden" }}>
+                      <div style={{ height: "100%", borderRadius: 99, background: "#22c55e", width: `${Math.min(100, (afterDiscount / 499) * 100)}%`, transition: "width 0.3s" }} />
+                    </div>
+                  </div>
+                </div>
+              )}
+              {afterDiscount >= 499 && (
+                <div style={{ background: dark ? "rgba(34,197,94,0.1)" : "#f0fdf4", border: `1px solid ${dark ? "rgba(34,197,94,0.2)" : "#bbf7d0"}`, borderRadius: 12, padding: "10px 14px", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>🎉</span>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: dark ? "#4ade80" : "#15803d" }}>You've unlocked FREE delivery!</div>
+                </div>
+              )}
               {/* Summary */}
               <div style={{ ...S.card, padding: "20px", marginBottom: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: T.text, marginBottom: 14 }}>Order Summary</div>
-                {[["Subtotal", `₹${cartSubtotal.toFixed(2)}`], ...(appliedPromo ? [[`Discount (${appliedPromo.discount_percent}%)`, `-₹${discount.toFixed(2)}`]] : []), ...(redeemPoints > 0 ? [[`Points (${redeemPoints} pts)`, `-₹${pointsDiscount.toFixed(2)}`]] : []), ["Delivery fee", "₹29"], ["Tax (5% GST)", `₹${(cartSubtotal * 0.05).toFixed(2)}`]].map(([l, v]) => (
+                {[["Subtotal", `₹${cartSubtotal.toFixed(2)}`], ...(appliedPromo ? [[`Discount (${appliedPromo.discount_percent}%)`, `-₹${discount.toFixed(2)}`]] : []), ...(redeemPoints > 0 ? [[`Points (${redeemPoints} pts)`, `-₹${pointsDiscount.toFixed(2)}`]] : []), ["Delivery fee", deliveryFee === 0 ? "FREE 🎉" : "₹29"], ["Tax (5% GST)", `₹${(cartSubtotal * 0.05).toFixed(2)}`]].map(([l, v]) => (
                   <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14, color: l.startsWith("Discount") ? T.accent : T.subtext }}>
                     <span>{l}</span><span style={{ fontWeight: l.startsWith("Discount") ? 800 : 400 }}>{v}</span>
                   </div>
@@ -2153,7 +2175,7 @@ export default function DairyApp() {
                   <span>₹{(item.total_price ?? 0).toFixed(2)}</span>
                 </div>
               ))}
-              {[["Delivery", "₹29"], ["Tax", `₹${(showInvoice.tax ?? 0).toFixed(2)}`], ["Total", `₹${(showInvoice.total ?? 0).toFixed(2)}`]].map(([l, v]) => (
+              {[["Delivery", showInvoice.delivery_fee === 0 ? "FREE 🎉" : "₹29"], ["Tax", `₹${(showInvoice.tax ?? 0).toFixed(2)}`], ["Total", `₹${(showInvoice.total ?? 0).toFixed(2)}`]].map(([l, v]) => (
                 <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: l === "Total" ? 16 : 14, fontWeight: l === "Total" ? 900 : 400, color: l === "Total" ? T.text : T.subtext, marginTop: 8 }}>
                   <span>{l}</span><span>{v}</span>
                 </div>
@@ -2475,8 +2497,8 @@ export default function DairyApp() {
         <div style={{ ...S.scroll, padding: "24px", background: T.screenBg }}>
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div style={{ fontSize: 72, marginBottom: 12 }}>🎁</div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: T.text, marginBottom: 8 }}>Give $5, Get $5</div>
-            <div style={{ fontSize: 15, color: T.subtext, lineHeight: 1.6 }}>Share your code. You both get $5 credit when they place their first order!</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: T.text, marginBottom: 8 }}>Give ₹50, Get ₹50</div>
+            <div style={{ fontSize: 15, color: T.subtext, lineHeight: 1.6 }}>Share your code. You both get ₹50 credit when they place their first order!</div>
           </div>
           {referral && (
             <>

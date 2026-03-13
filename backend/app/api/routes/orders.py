@@ -66,8 +66,9 @@ async def create_payment_intent(
             pts_discount = min(raw_discount, subtotal * 0.5)   # cap at 50% of subtotal
 
     after = subtotal - discount - pts_discount
-    tax = round(after * 0.08, 2)
-    total = round(after + 1.99 + tax, 2)
+    tax = round(after * 0.05, 2)
+    delivery_fee_preview = 0.0 if (subtotal - discount - pts_discount) >= 499 else 29.0
+    total = round(after + delivery_fee_preview + tax, 2)
     dummy_id = f"dummy_{current_user.id}_{int(time.time())}"
     return {"client_secret": dummy_id + "_secret", "amount": total, "payment_intent_id": dummy_id}
 
@@ -163,9 +164,9 @@ async def place_order(
         loyalty.points -= redeemed
         db.add(LoyaltyTransaction(account_id=loyalty.id, points=-redeemed, description="Redeemed at checkout"))
 
-    delivery_fee = 1.99
+    delivery_fee = 0.0 if (subtotal - discount - pts_discount) >= 499 else 29.0
     after = subtotal - discount - pts_discount
-    tax = round(after * 0.08, 2)
+    tax = round(after * 0.05, 2)
     total = round(after + delivery_fee + tax, 2)
     points_earned = int(subtotal / 10)  # 1 point per ₹10 spent (realistic rate)
 

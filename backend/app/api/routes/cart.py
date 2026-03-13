@@ -89,7 +89,7 @@ async def validate_promo(payload: PromoValidate, db: AsyncSession = Depends(get_
     if promo.max_uses and promo.uses_count >= promo.max_uses:
         return PromoResult(valid=False, message="Promo code usage limit reached")
     if payload.order_value < promo.min_order_value:
-        return PromoResult(valid=False, message=f"Minimum order ${promo.min_order_value:.2f}")
+        return PromoResult(valid=False, message=f"Minimum order ₹{promo.min_order_value:.2f}")
     return PromoResult(
         valid=True,
         discount_percent=promo.discount_percent,
