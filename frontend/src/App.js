@@ -321,7 +321,10 @@ export default function DairyApp() {
   const [productReviews, setProductReviews]   = useState([]);
   const [loading, setLoading]         = useState(false);
   const [productsLoading, setProductsLoading] = useState(true);
-  const [confirmModal, setConfirmModal] = useState(null); // { title, message, danger, onConfirm }
+  const [confirmModal, setConfirmModal]   = useState(null);
+  const [broadcastForm, setBroadcastForm] = useState({ title:"", body:"", icon:"📢" });
+  const [broadcastSending, setBroadcastSending] = useState(false);
+  const [referralCredit, setReferralCredit] = useState(0); // ₹ to apply at checkout // { title, message, danger, onConfirm }
   const [productsError, setProductsError]     = useState(false);
   const [error, setError]             = useState("");
   const [toasts, setToasts]           = useState([]);  // [{id, msg, type}]
@@ -680,8 +683,8 @@ export default function DairyApp() {
   const cartCount    = cart.reduce((s, i) => s + i.quantity, 0);
   const cartSubtotal = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
   const discount     = appliedPromo ? cartSubtotal * appliedPromo.discount_percent / 100 : 0;
-  const pointsDiscount = Math.floor(redeemPoints / 500) * 50;  // 500 pts = ₹50
-  const cartTotal    = Math.max(0, cartSubtotal - discount - pointsDiscount + 29.00 + cartSubtotal * 0.05);
+  const pointsDiscount  = Math.floor(redeemPoints / 500) * 50;  // 500 pts = ₹50
+  const cartTotal     = Math.max(0, cartSubtotal - discount - pointsDiscount - referralCredit + 29.00 + cartSubtotal * 0.05);
   const unreadNotifs = notifications.filter(n => !n.is_read).length;
 
   const updateCart = async (productId, quantity) => {
@@ -2021,10 +2024,31 @@ export default function DairyApp() {
                   </div>
                 </div>
               )}
+              {/* Referral Credit */}
+              {referral && referral.total_credit_earned > 0 && (
+                <div style={{ ...S.card, padding: "18px 20px", marginBottom: 14 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>🎁 Referral Credit</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#22c55e" }}>₹{referral.total_credit_earned.toFixed(0)} available</div>
+                  </div>
+                  <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Earned by referring friends. Applied directly to your order.</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <button onClick={() => setReferralCredit(0)} disabled={referralCredit === 0}
+                      style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: referralCredit === 0 ? T.cardBorder : T.tag, color: referralCredit === 0 ? T.muted : T.accent, fontSize: 20, fontWeight: 900, cursor: referralCredit === 0 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                    <div style={{ flex: 1, textAlign: "center" }}>
+                      <div style={{ fontSize: 20, fontWeight: 900, color: referralCredit > 0 ? "#22c55e" : T.muted }}>₹{referralCredit.toFixed(0)}</div>
+                      {referralCredit > 0 && <div style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>applied ✓</div>}
+                    </div>
+                    <button onClick={() => setReferralCredit(Math.min(referral.total_credit_earned, cartSubtotal * 0.5))}
+                      disabled={referralCredit >= Math.min(referral.total_credit_earned, cartSubtotal * 0.5)}
+                      style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: referralCredit >= Math.min(referral.total_credit_earned, cartSubtotal * 0.5) ? T.cardBorder : T.hero, color: "#fff", fontSize: 20, fontWeight: 900, cursor: referralCredit >= Math.min(referral.total_credit_earned, cartSubtotal * 0.5) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                  </div>
+                </div>
+              )}
               {/* Summary */}
               <div style={{ ...S.card, padding: "20px", marginBottom: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: T.text, marginBottom: 14 }}>Order Summary</div>
-                {[["Subtotal", `₹${cartSubtotal.toFixed(2)}`], ...(appliedPromo ? [[`Discount (${appliedPromo.discount_percent}%)`, `-₹${discount.toFixed(2)}`]] : []), ...(redeemPoints > 0 ? [[`Points (${redeemPoints} pts)`, `-₹${pointsDiscount.toFixed(2)}`]] : []), ["Delivery fee", "₹29"], ["Tax (5% GST)", `₹${(cartSubtotal * 0.05).toFixed(2)}`]].map(([l, v]) => (
+                {[["Subtotal", `₹${cartSubtotal.toFixed(2)}`], ...(appliedPromo ? [[`Discount (${appliedPromo.discount_percent}%)`, `-₹${discount.toFixed(2)}`]] : []), ...(redeemPoints > 0 ? [[`Points (${redeemPoints} pts)`, `-₹${pointsDiscount.toFixed(2)}`]] : []), ...(referralCredit > 0 ? [["🎁 Referral Credit", `-₹${referralCredit.toFixed(2)}`]] : []), ["Delivery fee", "₹29"], ["Tax (5% GST)", `₹${(cartSubtotal * 0.05).toFixed(2)}`]].map(([l, v]) => (
                   <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14, color: l.startsWith("Discount") ? T.accent : T.subtext }}>
                     <span>{l}</span><span style={{ fontWeight: l.startsWith("Discount") ? 800 : 400 }}>{v}</span>
                   </div>
@@ -2077,12 +2101,13 @@ export default function DairyApp() {
                         address_id: selectedAddress,
                         promo_code: appliedPromo ? promoCode : undefined,
                         redeem_points: redeemPoints,
+                        referral_credit: referralCredit,
                         payment_intent_id: "dummy_" + Date.now(),
                       });
                       setOrderPlaced(order);
                       setShowPayment(false);
                       setCardNumber(""); setCardExpiry(""); setCardCvc(""); setCardName("");
-                      await loadCart(); setAppliedPromo(null); setPromoCode(""); setRedeemPoints(0);
+                      await loadCart(); setAppliedPromo(null); setPromoCode(""); setRedeemPoints(0); setReferralCredit(0);
                       await loadLoyalty();
                     } catch (e) {
                       setPaymentError(e.response?.data?.detail || "Order failed. Please try again.");
@@ -2788,15 +2813,16 @@ export default function DairyApp() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 4, paddingBottom: 0, overflowX: "auto" }}>
-            {[["stats","📊 Stats"], ["orders","📦 Orders"], ["products","🥛 Products"], ["promos","🏷 Promos"], ["users","👥 Users"], ["tickets","🎫 Tickets"]].map(([t, label]) => (
+            {[["stats","📊 Stats"], ["orders","📦 Orders"], ["products","🥛 Products"], ["promos","🏷 Promos"], ["users","👥 Users"], ["tickets","🎫 Tickets"], ["notify","📣 Notify"]].map(([t, label]) => (
               <button key={t} onClick={async () => {
                 setAdminTab(t); setAdminLoading(true);
                 if(t==="orders") await loadAdminOrders();
                 else if(t==="products") await loadAdminProducts();
-                else if(t==="stats") await loadAdminStats();
+                else if(t==="stats") { await loadAdminStats(); await loadAdminOrders(); }
                 else if(t==="users") await loadAdminUsers();
                 else if(t==="promos") await loadAdminPromos();
                 else if(t==="tickets") await loadAdminTickets();
+                else if(t==="notify") {} // no load needed
                 setAdminLoading(false);
               }} style={{ padding: "8px 14px", background: adminTab===t ? "#fff" : "rgba(255,255,255,0.15)", color: adminTab===t ? "#2e7d32" : "#fff", border: "none", borderRadius: "12px 12px 0 0", fontSize: 12, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>{label}</button>
             ))}
@@ -2838,29 +2864,135 @@ export default function DairyApp() {
           )}
 
           {/* ── STATS TAB ── */}
-          {adminTab === "stats" && (
-            adminLoading ? <div style={{ textAlign:"center", padding:40, color:T.muted }}>Loading...</div> :
-            adminStats ? (
-              <div>
-                <div className="dd-stats-grid" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 }}>
+          {adminTab === "stats" && (() => {
+            if (adminLoading) return <div style={{ textAlign:"center", padding:40, color:T.muted }}>Loading...</div>;
+            if (!adminStats) return <div style={{ textAlign:"center", padding:40, color:T.muted }}>No data yet</div>;
+
+            // ── Derived chart data from adminOrders ──────────────
+            const last7 = Array.from({ length: 7 }, (_, i) => {
+              const d = new Date(); d.setDate(d.getDate() - (6 - i));
+              const key = d.toLocaleDateString("en-IN", { weekday: "short" });
+              const dayOrders = adminOrders.filter(o => {
+                const od = new Date(o.created_at);
+                return od.toDateString() === d.toDateString() && o.status !== "cancelled";
+              });
+              return { day: key, revenue: dayOrders.reduce((s, o) => s + (o.total || 0), 0), count: dayOrders.length };
+            });
+            const maxRev = Math.max(...last7.map(d => d.revenue), 1);
+            const maxCount = Math.max(...last7.map(d => d.count), 1);
+
+            // ── Order status breakdown ───────────────────────────
+            const statusGroups = ["pending","confirmed","packing","on_the_way","delivered","cancelled"].map(s => ({
+              label: s.replace("_"," "), count: adminOrders.filter(o => o.status === s).length,
+              color: s === "delivered" ? "#22c55e" : s === "cancelled" ? "#ef4444" : s === "on_the_way" ? "#3b82f6" : s === "packing" ? "#f59e0b" : s === "confirmed" ? "#8b5cf6" : "#9ca3af"
+            })).filter(s => s.count > 0);
+            const totalStatusOrders = statusGroups.reduce((s, g) => s + g.count, 0) || 1;
+
+            // ── Top KPI cards ────────────────────────────────────
+            const avgOrderValue = adminStats.total_orders > 0 ? (adminStats.total_revenue / adminStats.total_orders) : 0;
+            const convRate = adminStats.total_users > 0 ? ((adminStats.total_orders / adminStats.total_users) * 100) : 0;
+
+            return (
+              <div style={{ paddingBottom: 8 }}>
+
+                {/* ── KPI Row ── */}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:14 }}>
                   {[
-                    ["💰 Total Revenue", `₹${adminStats.total_revenue.toFixed(2)}`, "#e8f5e9"],
-                    ["🛒 Orders Today", adminStats.orders_today, "#e3f2fd"],
-                    ["📅 This Week", adminStats.orders_this_week, "#fff8e1"],
-                    ["📋 Total Orders", adminStats.total_orders, "#fff3e0"],
-                    ["👥 Total Users", adminStats.total_users, "#f3e5f5"],
-                    ["✅ Active Users", adminStats.active_users, "#e0f2f1"],
-                    ["🥛 Products", adminStats.total_products ?? 0, "#e8f5e9"],
-                  ].map(([label, val, bg]) => (
-                    <div key={label} style={{ background: bg, borderRadius: 16, padding: "16px", textAlign: "center" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: T.subtext, marginBottom: 4 }}>{label}</div>
-                      <div style={{ fontSize: 22, fontWeight: 900, color: T.text }}>{val}</div>
+                    { icon:"💰", label:"Revenue", val:`₹${adminStats.total_revenue >= 1000 ? (adminStats.total_revenue/1000).toFixed(1)+"K" : adminStats.total_revenue.toFixed(0)}`, sub:"all time", color:"#22c55e" },
+                    { icon:"🛒", label:"Orders", val:adminStats.total_orders, sub:`${adminStats.orders_today} today`, color:"#3b82f6" },
+                    { icon:"👥", label:"Users", val:adminStats.total_users, sub:`${adminStats.active_users} active`, color:"#8b5cf6" },
+                    { icon:"📊", label:"Avg Order", val:`₹${avgOrderValue.toFixed(0)}`, sub:`${convRate.toFixed(1)}% conv.`, color:"#f59e0b" },
+                  ].map(({ icon, label, val, sub, color }) => (
+                    <div key={label} style={{ ...S.card, padding:"14px 16px", borderLeft:`4px solid ${color}` }}>
+                      <div style={{ fontSize:10, fontWeight:700, color:T.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:2 }}>{icon} {label}</div>
+                      <div style={{ fontSize:24, fontWeight:900, color:T.text, lineHeight:1.1 }}>{val}</div>
+                      <div style={{ fontSize:11, color:T.muted, marginTop:2 }}>{sub}</div>
                     </div>
                   ))}
                 </div>
+
+                {/* ── 7-Day Revenue Bar Chart ── */}
+                <div style={{ ...S.card, padding:"16px", marginBottom:14 }}>
+                  <div style={{ fontSize:13, fontWeight:900, color:T.text, marginBottom:4 }}>📈 Revenue — Last 7 Days</div>
+                  <div style={{ fontSize:11, color:T.muted, marginBottom:14 }}>₹{last7.reduce((s,d)=>s+d.revenue,0).toFixed(0)} this week</div>
+                  <div style={{ display:"flex", alignItems:"flex-end", gap:6, height:80 }}>
+                    {last7.map((d, i) => (
+                      <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+                        <div style={{ fontSize:9, color:T.muted, fontWeight:700 }}>{d.revenue > 0 ? `₹${d.revenue >= 1000 ? (d.revenue/1000).toFixed(1)+"K" : d.revenue.toFixed(0)}` : ""}</div>
+                        <div style={{ width:"100%", background: i === 6 ? "#22c55e" : T.accent, borderRadius:"6px 6px 0 0", height:`${Math.max((d.revenue/maxRev)*60, d.revenue > 0 ? 4 : 2)}px`, opacity: i === 6 ? 1 : 0.65, transition:"height 0.3s", minHeight:2 }} />
+                        <div style={{ fontSize:9, fontWeight:800, color: i===6 ? T.accent : T.muted }}>{d.day}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ── 7-Day Order Count Sparkline ── */}
+                <div style={{ ...S.card, padding:"16px", marginBottom:14 }}>
+                  <div style={{ fontSize:13, fontWeight:900, color:T.text, marginBottom:4 }}>🛒 Orders — Last 7 Days</div>
+                  <div style={{ fontSize:11, color:T.muted, marginBottom:14 }}>{last7.reduce((s,d)=>s+d.count,0)} orders this week · {adminStats.orders_today} today</div>
+                  <div style={{ display:"flex", alignItems:"flex-end", gap:6, height:64 }}>
+                    {last7.map((d, i) => (
+                      <div key={i} style={{ flex:1, display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+                        <div style={{ fontSize:9, color:T.muted, fontWeight:700 }}>{d.count > 0 ? d.count : ""}</div>
+                        <div style={{ width:"100%", background: i===6 ? "#3b82f6" : "#93c5fd", borderRadius:"5px 5px 0 0", height:`${Math.max((d.count/maxCount)*48, d.count > 0 ? 4 : 2)}px`, minHeight:2 }} />
+                        <div style={{ fontSize:9, fontWeight:800, color: i===6 ? "#3b82f6" : T.muted }}>{d.day}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* ── Order Status Donut ── */}
+                {statusGroups.length > 0 && (
+                  <div style={{ ...S.card, padding:"16px", marginBottom:14 }}>
+                    <div style={{ fontSize:13, fontWeight:900, color:T.text, marginBottom:14 }}>🍩 Order Status Breakdown</div>
+                    <div style={{ display:"flex", alignItems:"center", gap:16 }}>
+                      {/* SVG donut */}
+                      <svg width="96" height="96" viewBox="0 0 36 36" style={{ flexShrink:0 }}>
+                        {(() => {
+                          let offset = 0;
+                          return statusGroups.map((g, i) => {
+                            const pct = (g.count / totalStatusOrders) * 100;
+                            const dash = `${pct} ${100 - pct}`;
+                            const el = <circle key={i} cx="18" cy="18" r="15.9" fill="none" stroke={g.color} strokeWidth="4" strokeDasharray={dash} strokeDashoffset={-offset} style={{ transform:"rotate(-90deg)", transformOrigin:"50% 50%" }} />;
+                            offset += pct;
+                            return el;
+                          });
+                        })()}
+                        <text x="18" y="20" textAnchor="middle" style={{ fontSize:"6px", fontWeight:"bold", fill: dark ? "#fff" : "#333" }}>{adminStats.total_orders}</text>
+                      </svg>
+                      {/* Legend */}
+                      <div style={{ flex:1, display:"flex", flexDirection:"column", gap:7 }}>
+                        {statusGroups.map(g => (
+                          <div key={g.label} style={{ display:"flex", alignItems:"center", gap:8 }}>
+                            <div style={{ width:10, height:10, borderRadius:3, background:g.color, flexShrink:0 }} />
+                            <div style={{ flex:1, fontSize:12, color:T.subtext, textTransform:"capitalize", fontWeight:600 }}>{g.label}</div>
+                            <div style={{ fontSize:12, fontWeight:900, color:T.text }}>{g.count}</div>
+                            <div style={{ fontSize:10, color:T.muted }}>{((g.count/totalStatusOrders)*100).toFixed(0)}%</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Quick Info Row ── */}
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+                  {[
+                    { label:"This Week", val:adminStats.orders_this_week, icon:"📅" },
+                    { label:"Products", val:adminStats.total_products ?? 0, icon:"🥛" },
+                    { label:"Active Users", val:adminStats.active_users, icon:"✅" },
+                  ].map(({ label, val, icon }) => (
+                    <div key={label} style={{ ...S.card, padding:"12px 10px", textAlign:"center" }}>
+                      <div style={{ fontSize:18 }}>{icon}</div>
+                      <div style={{ fontSize:18, fontWeight:900, color:T.text, marginTop:2 }}>{val}</div>
+                      <div style={{ fontSize:10, color:T.muted, fontWeight:600, marginTop:1 }}>{label}</div>
+                    </div>
+                  ))}
+                </div>
+
               </div>
-            ) : <div style={{ textAlign:"center", padding:40, color:T.muted }}>No data yet</div>
-          )}
+            );
+          })()}
 
           {/* ── PROMOS TAB ── */}
           {adminTab === "promos" && (
@@ -3123,6 +3255,65 @@ export default function DairyApp() {
             ))}
           </div>
         )}
+
+          {/* ── NOTIFY TAB ── */}
+          {adminTab === "notify" && (
+            <div>
+              <div style={{ ...S.card, padding:"20px", marginBottom:14 }}>
+                <div style={{ fontSize:15, fontWeight:900, color:T.text, marginBottom:4 }}>📣 Broadcast Notification</div>
+                <div style={{ fontSize:12, color:T.muted, marginBottom:16 }}>Sends to all active users instantly.</div>
+                <div style={{ marginBottom:12 }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.subtext, marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>Icon</div>
+                  <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+                    {["📢","🎉","🔥","💰","🥛","⚡","🎁","🚚","⭐","💡"].map(ic => (
+                      <button key={ic} onClick={() => setBroadcastForm(f => ({...f, icon:ic}))}
+                        style={{ fontSize:22, background: broadcastForm.icon===ic ? T.tag : "transparent", border: broadcastForm.icon===ic ? `2px solid ${T.accent}` : "2px solid transparent", borderRadius:10, padding:"4px 8px", cursor:"pointer" }}>{ic}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginBottom:12 }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.subtext, marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>Title</div>
+                  <input value={broadcastForm.title} onChange={e => setBroadcastForm(f => ({...f, title:e.target.value}))}
+                    placeholder="e.g. Flash Sale Today! 🔥" maxLength={80} style={{ ...S.input, padding:"10px 14px" }} />
+                  <div style={{ fontSize:10, color:T.muted, marginTop:3, textAlign:"right" }}>{broadcastForm.title.length}/80</div>
+                </div>
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:T.subtext, marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>Message</div>
+                  <textarea value={broadcastForm.body} onChange={e => setBroadcastForm(f => ({...f, body:e.target.value}))}
+                    placeholder="e.g. Get 20% off all dairy products today only!" rows={3} maxLength={255}
+                    style={{ ...S.input, padding:"10px 14px", resize:"none", fontFamily:"inherit", lineHeight:1.5 }} />
+                  <div style={{ fontSize:10, color:T.muted, marginTop:3, textAlign:"right" }}>{broadcastForm.body.length}/255</div>
+                </div>
+                {(broadcastForm.title || broadcastForm.body) && (
+                  <div style={{ background:T.tag, borderRadius:14, padding:"12px 16px", marginBottom:16, display:"flex", gap:12, alignItems:"flex-start" }}>
+                    <div style={{ fontSize:24 }}>{broadcastForm.icon}</div>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:800, color:T.text }}>{broadcastForm.title || "Title preview"}</div>
+                      <div style={{ fontSize:12, color:T.subtext, marginTop:2, lineHeight:1.5 }}>{broadcastForm.body || "Message preview"}</div>
+                    </div>
+                  </div>
+                )}
+                <button onClick={() => {
+                  if (!broadcastForm.title.trim()) { showToast("Title is required"); return; }
+                  if (!broadcastForm.body.trim()) { showToast("Message is required"); return; }
+                  showConfirm({ title:"Send Notification?", message:`Send "${broadcastForm.title}" to all active users?`, confirmLabel:"Send Now", danger:false,
+                    onConfirm: async () => {
+                      setBroadcastSending(true);
+                      try {
+                        const { data } = await adminAPI.broadcast(broadcastForm);
+                        showToast(`Sent to ${data.sent_to} users!`, "success");
+                        setBroadcastForm({ title:"", body:"", icon:"📢" });
+                      } catch(e) { showToast(e.response?.data?.detail || "Failed to send"); }
+                      finally { setBroadcastSending(false); }
+                    }
+                  });
+                }} disabled={broadcastSending} style={{ ...S.btn, opacity: broadcastSending ? 0.7 : 1 }}>
+                  {broadcastSending ? "Sending…" : "📣 Send to All Users"}
+                </button>
+              </div>
+            </div>
+          )}
+
       </div>
       <BottomNav screen={screen} setScreen={setScreen} cartCount={cartCount} T={T} user={user} />
     </>

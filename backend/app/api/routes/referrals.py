@@ -10,6 +10,18 @@ from app.schemas.schemas import ReferralOut
 router = APIRouter()
 
 
+async def _get_referral_credit(user_id: int, db) -> float:
+    """Return total referral credit earned for a user (₹50 per successful referral)."""
+    from sqlalchemy import select, func
+    from app.models.user import User, Order
+    subq = select(Order.user_id).where(Order.user_id == User.id).exists()
+    res = await db.execute(
+        select(func.count(User.id)).where(User.referred_by == user_id).where(subq)
+    )
+    successful = res.scalar() or 0
+    return float(successful * 50.0)
+
+
 @router.get("/", response_model=ReferralOut)
 async def get_referral_info(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     # Count users referred by this user
@@ -22,7 +34,7 @@ async def get_referral_info(current_user: User = Depends(get_current_user), db: 
         select(func.count(User.id)).where(User.referred_by == current_user.id).where(subq)
     )
     successful = successful_res.scalar() or 0
-    credit = successful * 5.0
+    credit = successful * 50.0  # ₹50 per successful referral
 
     return ReferralOut(
         referral_code=current_user.referral_code or "",

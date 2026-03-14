@@ -146,3 +146,39 @@ async def admin_delete_promo(
         raise HTTPException(status_code=404, detail="Promo code not found")
     await db.delete(promo)
     await db.commit()
+
+
+# ── Admin: Send Broadcast Notification ───────────────────────
+from app.models.user import Notification, NotifType
+from pydantic import BaseModel as PydanticBase
+
+class BroadcastPayload(PydanticBase):
+    title: str
+    body: str
+    icon: str = "📢"
+    target: str = "all"   # "all" | "active"
+
+@router.post("/notify/broadcast")
+async def broadcast_notification(
+    payload: BroadcastPayload,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(get_current_admin),
+):
+    if not payload.title.strip() or not payload.body.strip():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="Title and body are required")
+
+    q = select(User).where(User.is_active == True)
+    result = await db.execute(q)
+    users = result.scalars().all()
+
+    for u in users:
+        db.add(Notification(
+            user_id=u.id,
+            type=NotifType.promo,
+            icon=payload.icon,
+            title=payload.title.strip(),
+            body=payload.body.strip(),
+        ))
+    await db.commit()
+    return {"sent_to": len(users), "message": f"Notification sent to {len(users)} users"}

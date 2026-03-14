@@ -220,6 +220,7 @@ class PlaceOrderRequest(BaseModel):
     address_id: int
     promo_code: Optional[str] = None
     redeem_points: int = 0
+    referral_credit: float = 0.0   # ₹ referral credit to apply
     notes: Optional[str] = None
     payment_intent_id: Optional[str] = None   # Required for paid orders
 

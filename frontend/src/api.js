@@ -169,6 +169,7 @@ export const adminAPI = {
   deletePromo: (id)        => api.delete(`/admin/promos/${id}`),
   allTickets: ()           => api.get("/support/admin/all"),
   replyTicket: (id, data)  => api.patch(`/support/admin/${id}/reply`, data),
+  broadcast: (data)        => api.post("/admin/notify/broadcast", data),
 };
 
 export default api;
