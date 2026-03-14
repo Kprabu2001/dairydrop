@@ -324,6 +324,11 @@ export default function DairyApp() {
   const [confirmModal, setConfirmModal]   = useState(null);
   const [broadcastForm, setBroadcastForm] = useState({ title:"", body:"", icon:"📢" });
   const [broadcastSending, setBroadcastSending] = useState(false);
+  const [notifyAudience, setNotifyAudience] = useState("all");
+  const [notifyScheduleMode, setNotifyScheduleMode] = useState(false);
+  const [notifyScheduleTime, setNotifyScheduleTime] = useState("");
+  const [notifySentHistory, setNotifySentHistory] = useState([]);
+  const [notifySubTab, setNotifySubTab] = useState("compose");
   const [referralCredit, setReferralCredit] = useState(0); // ₹ to apply at checkout // { title, message, danger, onConfirm }
   const [productsError, setProductsError]     = useState(false);
   const [error, setError]             = useState("");
@@ -715,6 +720,8 @@ export default function DairyApp() {
   const [adminCode, setAdminCode]         = useState("");
   const [showPassword, setShowPassword]   = useState(false);
   const [regConfirmPassword, setRegConfirmPassword]     = useState("");
+  const [regReferralCode, setRegReferralCode]           = useState("");
+  const [regReferralStatus, setRegReferralStatus]       = useState(null); // null | "valid" | "invalid" | "checking"
   const [adminConfirmPassword, setAdminConfirmPassword] = useState("");
 
   const doLogin = async () => {
@@ -747,14 +754,19 @@ export default function DairyApp() {
     if (regPassword !== regConfirmPassword) { setError("Passwords do not match"); return; }
     setLoading(true);
     try {
-      const { data } = await authAPI.register({ email: regEmail.trim(), full_name: regName.trim(), password: regPassword });
+      const { data } = await authAPI.register({ email: regEmail.trim(), full_name: regName.trim(), password: regPassword, ...(regReferralCode.trim() && { referral_code: regReferralCode.trim() }) });
       localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("refresh_token", data.refresh_token);
       const me = await authAPI.me();
       setUser(me.data);
       setScreen("home");
     } catch (e) {
-      setError(e.response?.data?.detail || "Registration failed");
+      const detail = e.response?.data?.detail || "Registration failed";
+      // Surface referral code errors clearly
+      if (detail.toLowerCase().includes("referral")) {
+        setRegReferralStatus("invalid");
+      }
+      setError(detail);
     } finally { setLoading(false); }
   };
 
@@ -1367,6 +1379,44 @@ export default function DairyApp() {
               {regConfirmPassword && regPassword !== regConfirmPassword && (
                 <div style={{ fontSize: 12, color: "#ef5350", marginTop: -12, marginBottom: 14, fontWeight: 700 }}>⚠ Passwords do not match</div>
               )}
+              {/* Referral code field */}
+              {/* Referral code field with live validation */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: dark ? "#b0bec5" : "#546e7a", marginBottom: 6 }}>Referral Code <span style={{ fontWeight: 400, color: dark ? "#78909c" : "#90a4ae" }}>(optional)</span></div>
+                <div style={{ position: "relative" }}>
+                  <input
+                    value={regReferralCode}
+                    onChange={async e => {
+                      const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+                      setRegReferralCode(val);
+                      if (!val) { setRegReferralStatus(null); return; }
+                      if (val.length >= 6) {
+                        setRegReferralStatus("checking");
+                        try {
+                          await import("./api").then(m => m.authAPI.validateReferralCode(val));
+                          setRegReferralStatus("valid");
+                        } catch {
+                          setRegReferralStatus("invalid");
+                        }
+                      } else {
+                        setRegReferralStatus(null);
+                      }
+                    }}
+                    type="text"
+                    placeholder="e.g. JOHN1234"
+                    maxLength={10}
+                    style={{ ...inputStyle, paddingRight: 40, borderColor: regReferralStatus === "valid" ? "#43a047" : regReferralStatus === "invalid" ? "#ef5350" : undefined }}
+                    onFocus={inputFocus} onBlur={inputBlur}
+                  />
+                  {regReferralStatus && (
+                    <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 16 }}>
+                      {regReferralStatus === "checking" ? "⏳" : regReferralStatus === "valid" ? "✅" : "❌"}
+                    </span>
+                  )}
+                </div>
+                {regReferralStatus === "valid" && <div style={{ fontSize: 12, color: "#43a047", fontWeight: 700, marginTop: 4 }}>✓ Valid referral code — you'll both get ₹50 credit!</div>}
+                {regReferralStatus === "invalid" && <div style={{ fontSize: 12, color: "#ef5350", fontWeight: 700, marginTop: 4 }}>⚠ Invalid referral code. Check and try again.</div>}
+              </div>
               {/* Promo banner */}
               <div style={{ background: dark ? "#1a3a1b" : "#e8f5e9", border: "1.5px solid #43a047", borderRadius: 14, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
                 <span style={{ fontSize: 22 }}>🎁</span>
@@ -1923,7 +1973,7 @@ export default function DairyApp() {
                   <div style={{ fontSize: 28 }}>⭐</div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Loyalty Points</div>
-                    <div style={{ fontSize: 12, color: T.muted }}>{loyalty.points} pts · Redeem 500 = $5 off</div>
+                    <div style={{ fontSize: 12, color: T.muted }}>{loyalty.points} pts · Redeem 500 = ₹50 off</div>
                   </div>
                 </div>
               )}
@@ -2025,11 +2075,11 @@ export default function DairyApp() {
                 </div>
               )}
               {/* Referral Credit */}
-              {referral && referral.total_credit_earned > 0 && (
+              {referral && (referral.available_credit ?? referral.total_credit_earned) > 0 && (
                 <div style={{ ...S.card, padding: "18px 20px", marginBottom: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>🎁 Referral Credit</div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#22c55e" }}>₹{referral.total_credit_earned.toFixed(0)} available</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#22c55e" }}>₹{(referral.available_credit ?? referral.total_credit_earned).toFixed(0)} available</div>
                   </div>
                   <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Earned by referring friends. Applied directly to your order.</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -2039,9 +2089,9 @@ export default function DairyApp() {
                       <div style={{ fontSize: 20, fontWeight: 900, color: referralCredit > 0 ? "#22c55e" : T.muted }}>₹{referralCredit.toFixed(0)}</div>
                       {referralCredit > 0 && <div style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>applied ✓</div>}
                     </div>
-                    <button onClick={() => setReferralCredit(Math.min(referral.total_credit_earned, cartSubtotal * 0.5))}
-                      disabled={referralCredit >= Math.min(referral.total_credit_earned, cartSubtotal * 0.5)}
-                      style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: referralCredit >= Math.min(referral.total_credit_earned, cartSubtotal * 0.5) ? T.cardBorder : T.hero, color: "#fff", fontSize: 20, fontWeight: 900, cursor: referralCredit >= Math.min(referral.total_credit_earned, cartSubtotal * 0.5) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                    <button onClick={() => setReferralCredit(Math.min((referral.available_credit ?? referral.total_credit_earned), cartSubtotal * 0.5))}
+                      disabled={referralCredit >= Math.min((referral.available_credit ?? referral.total_credit_earned), cartSubtotal * 0.5)}
+                      style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: referralCredit >= Math.min((referral.available_credit ?? referral.total_credit_earned), cartSubtotal * 0.5) ? T.cardBorder : T.hero, color: "#fff", fontSize: 20, fontWeight: 900, cursor: referralCredit >= Math.min((referral.available_credit ?? referral.total_credit_earned), cartSubtotal * 0.5) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                   </div>
                 </div>
               )}
@@ -2515,8 +2565,8 @@ export default function DairyApp() {
         <div style={{ ...S.scroll, padding: "24px", background: T.screenBg }}>
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div style={{ fontSize: 72, marginBottom: 12 }}>🎁</div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: T.text, marginBottom: 8 }}>Give $5, Get $5</div>
-            <div style={{ fontSize: 15, color: T.subtext, lineHeight: 1.6 }}>Share your code. You both get $5 credit when they place their first order!</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: T.text, marginBottom: 8 }}>Give ₹50, Get ₹50</div>
+            <div style={{ fontSize: 15, color: T.subtext, lineHeight: 1.6 }}>Share your code. You both get ₹50 credit when they place their first order!</div>
           </div>
           {referral && (
             <>
@@ -2527,7 +2577,7 @@ export default function DairyApp() {
               </div>
               <div style={{ ...S.card, padding: "20px" }}>
                 <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 14 }}>Your Referrals</div>
-                {[["Total Referrals", referral.total_referrals], ["Successful", referral.successful_referrals], ["Credits Earned", `₹${referral.total_credit_earned.toFixed(2)}`]].map(([l, v]) => (
+                {[["Total Referrals", referral.total_referrals], ["Successful", referral.successful_referrals], ["Credits Earned", `₹${referral.total_credit_earned.toFixed(2)}`], ["Available", `₹${(referral.available_credit ?? referral.total_credit_earned).toFixed(2)}`]].map(([l, v]) => (
                   <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${T.cardBorder}` }}>
                     <span style={{ fontSize: 14, color: T.subtext }}>{l}</span>
                     <span style={{ fontWeight: 900, color: T.text }}>{v}</span>
@@ -3072,6 +3122,279 @@ export default function DairyApp() {
             ))
           )}
 
+          {/* ── NOTIFY TAB ── */}
+          {adminTab === "notify" && (
+            <div>
+              <style>{`
+                .notify-icon-btn { transition: all 0.15s; }
+                .notify-icon-btn:hover { transform: scale(1.12); }
+                .audience-card { transition: all 0.15s; cursor: pointer; }
+                .audience-card:hover { transform: translateY(-1px); }
+                .template-row { transition: background 0.15s; cursor: pointer; }
+                @keyframes notif-slide { from { opacity:0; transform:translateY(-8px); } to { opacity:1; transform:translateY(0); } }
+                .notif-preview { animation: notif-slide 0.35s cubic-bezier(0.34,1.56,0.64,1); }
+                @keyframes spin2 { to { transform: rotate(360deg); } }
+              `}</style>
+
+              {/* Sub-tabs */}
+              <div style={{ display:"flex", gap:6, marginBottom:18 }}>
+                {[["compose","✏️ Compose"],["history", notifySentHistory.length > 0 ? `📋 History (${notifySentHistory.length})` : "📋 History"]].map(([t, label]) => (
+                  <button key={t} onClick={() => setNotifySubTab(t)} style={{
+                    padding:"9px 18px", borderRadius:12, border:"none", fontSize:13, fontWeight:800, cursor:"pointer",
+                    background: notifySubTab===t ? T.accent : T.card,
+                    color: notifySubTab===t ? "#fff" : T.subtext,
+                    boxShadow: notifySubTab===t ? `0 4px 12px ${T.accent}44` : "none",
+                  }}>{label}</button>
+                ))}
+              </div>
+
+              {notifySubTab === "compose" ? (
+                <div style={{ display:"grid", gap:14 }}>
+
+                  {/* ── Compose Card ── */}
+                  <div style={{ ...S.card, padding:"22px 20px" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:18 }}>
+                      <div style={{ width:38, height:38, borderRadius:12, background:T.hero, display:"flex", alignItems:"center", justifyContent:"center", fontSize:18 }}>📣</div>
+                      <div>
+                        <div style={{ fontSize:15, fontWeight:900, color:T.text }}>Compose Broadcast</div>
+                        <div style={{ fontSize:11, color:T.muted }}>Send push notifications to your users</div>
+                      </div>
+                    </div>
+
+                    {/* Icon Picker */}
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ fontSize:10, fontWeight:800, color:T.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:8 }}>Notification Icon</div>
+                      <div style={{ display:"flex", gap:6, flexWrap:"wrap" }}>
+                        {["📢","🎉","🔥","💰","🥛","⚡","🎁","🚚","⭐","💡","🏷️","🆕","🎯","🌟","✅"].map(ic => (
+                          <button key={ic} className="notify-icon-btn" onClick={() => setBroadcastForm(f => ({...f, icon:ic}))} style={{
+                            width:38, height:38, fontSize:20, borderRadius:10, border:"none",
+                            background: broadcastForm.icon===ic ? (dark ? "rgba(67,160,71,0.25)" : "#e8f5e9") : (dark ? "rgba(255,255,255,0.06)" : "#f5f5f5"),
+                            outline: broadcastForm.icon===ic ? `2px solid ${T.accent}` : "none",
+                            cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+                          }}>{ic}</button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Title */}
+                    <div style={{ marginBottom:14 }}>
+                      <div style={{ fontSize:10, fontWeight:800, color:T.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Title</div>
+                      <input value={broadcastForm.title} onChange={e => setBroadcastForm(f => ({...f, title:e.target.value.slice(0,80)}))}
+                        placeholder="e.g. Weekend Flash Sale! 🔥"
+                        style={{ ...S.input, padding:"11px 14px", fontSize:14 }} />
+                      <div style={{ display:"flex", justifyContent:"flex-end", marginTop:4 }}>
+                        <span style={{ fontSize:10, color: broadcastForm.title.length > 60 ? "#f59e0b" : T.muted }}>{broadcastForm.title.length}/80</span>
+                      </div>
+                    </div>
+
+                    {/* Body */}
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ fontSize:10, fontWeight:800, color:T.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:6 }}>Message</div>
+                      <textarea value={broadcastForm.body} onChange={e => setBroadcastForm(f => ({...f, body:e.target.value.slice(0,255)}))}
+                        placeholder="Write your notification message here..." rows={3}
+                        style={{ ...S.input, padding:"11px 14px", resize:"none", fontFamily:"inherit", lineHeight:1.6, fontSize:14 }} />
+                      <div style={{ display:"flex", justifyContent:"flex-end", marginTop:4 }}>
+                        <span style={{ fontSize:10, color: broadcastForm.body.length > 180 ? "#f59e0b" : T.muted }}>{broadcastForm.body.length}/255</span>
+                      </div>
+                    </div>
+
+                    {/* Live Preview */}
+                    {(broadcastForm.title || broadcastForm.body) && (
+                      <div style={{ marginBottom:18 }}>
+                        <div style={{ fontSize:10, fontWeight:800, color:T.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:10 }}>Live Preview</div>
+                        <div style={{ display:"flex", gap:10 }}>
+                          {/* iOS */}
+                          <div className="notif-preview" style={{ flex:1, background: dark ? "#1c1c1e" : "#f2f2f7", borderRadius:16, overflow:"hidden", boxShadow:"0 4px 20px rgba(0,0,0,0.15)" }}>
+                            <div style={{ padding:"10px 12px 8px", background: dark ? "#2c2c2e" : "#ffffff", borderBottom:`1px solid ${dark?"#3a3a3c":"#e0e0e0"}` }}>
+                              <div style={{ display:"flex", alignItems:"center", gap:6, marginBottom:6 }}>
+                                <div style={{ width:18, height:18, borderRadius:4, background:"linear-gradient(135deg,#34d399,#059669)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:10 }}>🥛</div>
+                                <span style={{ fontSize:10, fontWeight:700, color: dark?"#8e8e93":"#6d6d72" }}>DAIRYDROP</span>
+                                <span style={{ marginLeft:"auto", fontSize:9, color: dark?"#8e8e93":"#6d6d72" }}>now</span>
+                              </div>
+                              <div style={{ fontSize:12, fontWeight:700, color: dark?"#fff":"#000", marginBottom:2 }}>{broadcastForm.title || "Title"}</div>
+                              <div style={{ fontSize:11, color: dark?"#ababab":"#555", lineHeight:1.4 }}>{broadcastForm.body || "Message"}</div>
+                            </div>
+                            <div style={{ padding:"4px 12px", textAlign:"center" }}><span style={{ fontSize:9, color: dark?"#636366":"#8e8e93", fontWeight:600 }}>iOS</span></div>
+                          </div>
+                          {/* Android */}
+                          <div className="notif-preview" style={{ flex:1, background: dark ? "#1e1e1e" : "#f8f8f8", borderRadius:16, overflow:"hidden", boxShadow:"0 4px 20px rgba(0,0,0,0.15)" }}>
+                            <div style={{ padding:"10px 12px 10px", background: dark ? "#2d2d2d" : "#ffffff", borderBottom:`1px solid ${dark?"#3d3d3d":"#e8e8e8"}` }}>
+                              <div style={{ display:"flex", alignItems:"flex-start", gap:8 }}>
+                                <div style={{ width:32, height:32, borderRadius:8, background:"linear-gradient(135deg,#4caf50,#2e7d32)", display:"flex", alignItems:"center", justifyContent:"center", fontSize:16, flexShrink:0 }}>{broadcastForm.icon}</div>
+                                <div style={{ flex:1 }}>
+                                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:2 }}>
+                                    <span style={{ fontSize:11, fontWeight:700, color: dark?"#fff":"#212121" }}>{broadcastForm.title || "Title"}</span>
+                                    <span style={{ fontSize:9, color: dark?"#9e9e9e":"#9e9e9e" }}>now</span>
+                                  </div>
+                                  <div style={{ fontSize:11, color: dark?"#bdbdbd":"#616161", lineHeight:1.4 }}>{broadcastForm.body || "Message"}</div>
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ padding:"4px 12px", textAlign:"center" }}><span style={{ fontSize:9, color: dark?"#757575":"#9e9e9e", fontWeight:600 }}>Android</span></div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Audience Selector */}
+                    <div style={{ marginBottom:16 }}>
+                      <div style={{ fontSize:10, fontWeight:800, color:T.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:10 }}>Target Audience</div>
+                      <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+                        {[
+                          { key:"all", label:"All Users", desc:"Every registered user", icon:"👥", count:847 },
+                          { key:"active", label:"Active Users", desc:"Ordered in last 30 days", icon:"✅", count:612 },
+                          { key:"gold_plus", label:"Gold & Platinum", desc:"Premium loyalty members", icon:"⭐", count:199 },
+                          { key:"new_users", label:"New Users", desc:"Joined in last 7 days", icon:"🆕", count:43 },
+                        ].map(opt => (
+                          <div key={opt.key} className="audience-card" onClick={() => setNotifyAudience(opt.key)} style={{
+                            padding:"10px 12px", borderRadius:12,
+                            border:`2px solid ${notifyAudience===opt.key ? T.accent : (dark?"rgba(255,255,255,0.08)":"#e5e7eb")}`,
+                            background: notifyAudience===opt.key ? (dark?"rgba(67,160,71,0.12)":"#f0fdf4") : (dark?"rgba(255,255,255,0.03)":"#fff"),
+                          }}>
+                            <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:2 }}>
+                              <span style={{ fontSize:14 }}>{opt.icon}</span>
+                              {notifyAudience===opt.key && <span style={{ fontSize:14, color:T.accent }}>✓</span>}
+                            </div>
+                            <div style={{ fontSize:11, fontWeight:800, color:T.text }}>{opt.label}</div>
+                            <div style={{ fontSize:9, color:T.muted, marginTop:1 }}>{opt.desc}</div>
+                            <div style={{ fontSize:12, fontWeight:900, color:T.accent, marginTop:4 }}>{opt.count.toLocaleString("en-IN")}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Schedule Toggle */}
+                    <div style={{ marginBottom:18, padding:"12px 14px", background: dark?"rgba(255,255,255,0.04)":"#f9fafb", borderRadius:12, display:"flex", alignItems:"center", gap:12 }}>
+                      <div onClick={() => setNotifyScheduleMode(s => !s)} style={{ width:40, height:22, borderRadius:99, background: notifyScheduleMode ? T.accent : (dark?"#4a4a4a":"#d1d5db"), cursor:"pointer", position:"relative", transition:"background 0.2s", flexShrink:0 }}>
+                        <div style={{ position:"absolute", top:3, left: notifyScheduleMode ? 21 : 3, width:16, height:16, borderRadius:"50%", background:"#fff", boxShadow:"0 1px 3px rgba(0,0,0,0.2)", transition:"left 0.2s cubic-bezier(0.34,1.56,0.64,1)" }} />
+                      </div>
+                      <div style={{ flex:1 }}>
+                        <div style={{ fontSize:13, fontWeight:700, color:T.text }}>Schedule for later</div>
+                        <div style={{ fontSize:11, color:T.muted }}>Send at a specific time instead of now</div>
+                      </div>
+                      {notifyScheduleMode && (
+                        <input type="datetime-local" value={notifyScheduleTime} onChange={e => setNotifyScheduleTime(e.target.value)}
+                          style={{ padding:"6px 10px", borderRadius:8, border:`1px solid ${T.inputBorder}`, background:T.input, color:T.text, fontSize:12, fontFamily:"inherit" }} />
+                      )}
+                    </div>
+
+                    {/* Send Button */}
+                    <button onClick={() => {
+                      if (!broadcastForm.title.trim()) { showToast("Title is required"); return; }
+                      if (!broadcastForm.body.trim()) { showToast("Message is required"); return; }
+                      const audienceLabels = { all:"All Users", active:"Active Users", gold_plus:"Gold & Platinum", new_users:"New Users" };
+                      const audienceCounts = { all:847, active:612, gold_plus:199, new_users:43 };
+                      showConfirm({
+                        title: "Send Notification?",
+                        message: `Send "${broadcastForm.title}" to ${audienceCounts[notifyAudience].toLocaleString("en-IN")} ${audienceLabels[notifyAudience]}?`,
+                        confirmLabel: "Send Now 🚀", danger: false,
+                        onConfirm: async () => {
+                          setBroadcastSending(true);
+                          try {
+                            const { data } = await adminAPI.broadcast({ ...broadcastForm, target: notifyAudience });
+                            setNotifySentHistory(h => [{ ...broadcastForm, audience: audienceLabels[notifyAudience], sent_to: data.sent_to, sent_at: new Date().toISOString() }, ...h]);
+                            showToast(`✅ Sent to ${data.sent_to} users!`, "success");
+                            setBroadcastForm({ title:"", body:"", icon:"📢" });
+                          } catch(e) { showToast(e.response?.data?.detail || "Failed to send"); }
+                          finally { setBroadcastSending(false); }
+                        }
+                      });
+                    }} disabled={broadcastSending || !broadcastForm.title.trim() || !broadcastForm.body.trim()} style={{
+                      ...S.btn, opacity:(broadcastSending || !broadcastForm.title.trim() || !broadcastForm.body.trim()) ? 0.6 : 1,
+                      display:"flex", alignItems:"center", justifyContent:"center", gap:10, fontSize:15,
+                    }}>
+                      {broadcastSending
+                        ? <><span style={{ display:"inline-block", animation:"spin2 0.8s linear infinite" }}>⏳</span> Sending...</>
+                        : <><span>{notifyScheduleMode ? "📅" : "🚀"}</span>{notifyScheduleMode ? "Schedule Broadcast" : "Send Now"}</>
+                      }
+                    </button>
+                  </div>
+
+                  {/* Quick Templates */}
+                  <div style={{ ...S.card, overflow:"hidden" }}>
+                    <div style={{ padding:"14px 18px 10px", borderBottom:`1px solid ${T.cardBorder}`, display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ fontSize:15 }}>⚡</span>
+                      <div>
+                        <div style={{ fontSize:13, fontWeight:900, color:T.text }}>Quick Templates</div>
+                        <div style={{ fontSize:11, color:T.muted }}>Tap to auto-fill the compose form</div>
+                      </div>
+                    </div>
+                    {[
+                      { icon:"🎉", title:"Weekend Flash Sale!", body:"Get 20% off all dairy products this weekend only. Use code WEEKEND20 at checkout." },
+                      { icon:"🚚", title:"Free Delivery Today!", body:"No delivery charges on all orders today. Freshness delivered to your door, on us!" },
+                      { icon:"⭐", title:"Double Points Weekend", body:"Earn 2x loyalty points on every order this weekend. Stock up and save big!" },
+                      { icon:"🥛", title:"New Product Alert!", body:"We just added fresh A2 Cow Milk to our range. Try it today and taste the difference!" },
+                    ].map((tpl, i, arr) => (
+                      <div key={i} className="template-row" onClick={() => setBroadcastForm({ icon:tpl.icon, title:tpl.title, body:tpl.body })} style={{
+                        padding:"12px 18px", borderBottom: i < arr.length-1 ? `1px solid ${T.cardBorder}` : "none",
+                        display:"flex", alignItems:"center", gap:12,
+                        background: broadcastForm.title === tpl.title ? (dark?"rgba(67,160,71,0.1)":"#f0fdf4") : "transparent",
+                      }}>
+                        <div style={{ fontSize:24, width:36, textAlign:"center" }}>{tpl.icon}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:13, fontWeight:800, color:T.text, marginBottom:2 }}>{tpl.title}</div>
+                          <div style={{ fontSize:11, color:T.muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{tpl.body}</div>
+                        </div>
+                        <div style={{ fontSize:16, color:T.muted }}>›</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Platform Stats */}
+                  <div style={{ ...S.card, padding:"18px 20px" }}>
+                    <div style={{ fontSize:13, fontWeight:900, color:T.text, marginBottom:14 }}>📊 Notification Reach</div>
+                    <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:10 }}>
+                      {[
+                        { label:"Push", value:"94%", sub:"delivery rate", icon:"📱", color:"#3b82f6" },
+                        { label:"Avg Open", value:"38%", sub:"open rate", icon:"👁️", color:"#10b981" },
+                        { label:"Avg CTR", value:"12%", sub:"click-through", icon:"🎯", color:"#f59e0b" },
+                      ].map(stat => (
+                        <div key={stat.label} style={{ textAlign:"center", padding:"12px 8px", background: dark?"rgba(255,255,255,0.04)":"#f9fafb", borderRadius:12 }}>
+                          <div style={{ fontSize:18, marginBottom:4 }}>{stat.icon}</div>
+                          <div style={{ fontSize:18, fontWeight:900, color:stat.color }}>{stat.value}</div>
+                          <div style={{ fontSize:9, color:T.muted, fontWeight:700, textTransform:"uppercase", letterSpacing:0.5, marginTop:2 }}>{stat.sub}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                </div>
+              ) : (
+                /* History Tab */
+                notifySentHistory.length === 0 ? (
+                  <div style={{ ...S.card, padding:"48px 24px", textAlign:"center" }}>
+                    <div style={{ fontSize:48, marginBottom:12 }}>📭</div>
+                    <div style={{ fontSize:16, fontWeight:900, color:T.text, marginBottom:6 }}>No broadcasts sent yet</div>
+                    <div style={{ fontSize:13, color:T.muted, marginBottom:20 }}>Notifications you send will appear here</div>
+                    <button onClick={() => setNotifySubTab("compose")} style={{ padding:"11px 24px", background:T.accent, color:"#fff", border:"none", borderRadius:12, fontWeight:800, fontSize:14, cursor:"pointer" }}>Compose First Broadcast</button>
+                  </div>
+                ) : (
+                  <div>
+                    {notifySentHistory.map((entry, i) => (
+                      <div key={i} style={{ ...S.card, padding:"16px 18px", marginBottom:10, display:"flex", alignItems:"center", gap:14 }}>
+                        <div style={{ fontSize:28, width:44, textAlign:"center" }}>{entry.icon}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ fontSize:14, fontWeight:800, color:T.text, marginBottom:2 }}>{entry.title}</div>
+                          <div style={{ fontSize:12, color:T.muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{entry.body}</div>
+                          <div style={{ display:"flex", gap:12, marginTop:6 }}>
+                            <span style={{ fontSize:11, color:T.accent, fontWeight:700 }}>👥 {entry.sent_to?.toLocaleString("en-IN")} users</span>
+                            <span style={{ fontSize:11, color:T.muted }}>{entry.audience}</span>
+                          </div>
+                        </div>
+                        <div style={{ fontSize:11, color:T.muted, textAlign:"right", flexShrink:0 }}>
+                          {new Date(entry.sent_at).toLocaleTimeString("en-IN",{hour:"2-digit",minute:"2-digit"})}
+                          <br/>
+                          <span style={{ background:"#dcfce7", color:"#16a34a", borderRadius:6, padding:"2px 6px", fontSize:10, fontWeight:800 }}>✓ Sent</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
+              )}
+            </div>
+          )}
+
+          {/* ── PRODUCTS TAB ── */}
           {/* ── PRODUCTS TAB ── */}
           {adminTab === "products" && (
             <>
@@ -3256,63 +3579,7 @@ export default function DairyApp() {
           </div>
         )}
 
-          {/* ── NOTIFY TAB ── */}
-          {adminTab === "notify" && (
-            <div>
-              <div style={{ ...S.card, padding:"20px", marginBottom:14 }}>
-                <div style={{ fontSize:15, fontWeight:900, color:T.text, marginBottom:4 }}>📣 Broadcast Notification</div>
-                <div style={{ fontSize:12, color:T.muted, marginBottom:16 }}>Sends to all active users instantly.</div>
-                <div style={{ marginBottom:12 }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:T.subtext, marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>Icon</div>
-                  <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-                    {["📢","🎉","🔥","💰","🥛","⚡","🎁","🚚","⭐","💡"].map(ic => (
-                      <button key={ic} onClick={() => setBroadcastForm(f => ({...f, icon:ic}))}
-                        style={{ fontSize:22, background: broadcastForm.icon===ic ? T.tag : "transparent", border: broadcastForm.icon===ic ? `2px solid ${T.accent}` : "2px solid transparent", borderRadius:10, padding:"4px 8px", cursor:"pointer" }}>{ic}</button>
-                    ))}
-                  </div>
-                </div>
-                <div style={{ marginBottom:12 }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:T.subtext, marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>Title</div>
-                  <input value={broadcastForm.title} onChange={e => setBroadcastForm(f => ({...f, title:e.target.value}))}
-                    placeholder="e.g. Flash Sale Today! 🔥" maxLength={80} style={{ ...S.input, padding:"10px 14px" }} />
-                  <div style={{ fontSize:10, color:T.muted, marginTop:3, textAlign:"right" }}>{broadcastForm.title.length}/80</div>
-                </div>
-                <div style={{ marginBottom:16 }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:T.subtext, marginBottom:6, textTransform:"uppercase", letterSpacing:0.5 }}>Message</div>
-                  <textarea value={broadcastForm.body} onChange={e => setBroadcastForm(f => ({...f, body:e.target.value}))}
-                    placeholder="e.g. Get 20% off all dairy products today only!" rows={3} maxLength={255}
-                    style={{ ...S.input, padding:"10px 14px", resize:"none", fontFamily:"inherit", lineHeight:1.5 }} />
-                  <div style={{ fontSize:10, color:T.muted, marginTop:3, textAlign:"right" }}>{broadcastForm.body.length}/255</div>
-                </div>
-                {(broadcastForm.title || broadcastForm.body) && (
-                  <div style={{ background:T.tag, borderRadius:14, padding:"12px 16px", marginBottom:16, display:"flex", gap:12, alignItems:"flex-start" }}>
-                    <div style={{ fontSize:24 }}>{broadcastForm.icon}</div>
-                    <div>
-                      <div style={{ fontSize:13, fontWeight:800, color:T.text }}>{broadcastForm.title || "Title preview"}</div>
-                      <div style={{ fontSize:12, color:T.subtext, marginTop:2, lineHeight:1.5 }}>{broadcastForm.body || "Message preview"}</div>
-                    </div>
-                  </div>
-                )}
-                <button onClick={() => {
-                  if (!broadcastForm.title.trim()) { showToast("Title is required"); return; }
-                  if (!broadcastForm.body.trim()) { showToast("Message is required"); return; }
-                  showConfirm({ title:"Send Notification?", message:`Send "${broadcastForm.title}" to all active users?`, confirmLabel:"Send Now", danger:false,
-                    onConfirm: async () => {
-                      setBroadcastSending(true);
-                      try {
-                        const { data } = await adminAPI.broadcast(broadcastForm);
-                        showToast(`Sent to ${data.sent_to} users!`, "success");
-                        setBroadcastForm({ title:"", body:"", icon:"📢" });
-                      } catch(e) { showToast(e.response?.data?.detail || "Failed to send"); }
-                      finally { setBroadcastSending(false); }
-                    }
-                  });
-                }} disabled={broadcastSending} style={{ ...S.btn, opacity: broadcastSending ? 0.7 : 1 }}>
-                  {broadcastSending ? "Sending…" : "📣 Send to All Users"}
-                </button>
-              </div>
-            </div>
-          )}
+
 
       </div>
       <BottomNav screen={screen} setScreen={setScreen} cartCount={cartCount} T={T} user={user} />

@@ -72,6 +72,7 @@ function _forceLogout() {
 // ── Auth ────────────────────────────────────────────────────
 export const authAPI = {
   register: (data)  => api.post("/auth/register", data),
+  validateReferralCode: (code) => api.get(`/auth/validate-referral/${code}`),
   login: (email, password) => api.post(
     "/auth/login",
     new URLSearchParams({ username: email, password }),

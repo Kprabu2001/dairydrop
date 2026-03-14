@@ -118,3 +118,13 @@ async def refresh_token(payload: RefreshRequest, db: AsyncSession = Depends(get_
 @router.get("/me", response_model=UserOut)
 async def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+
+@router.get("/validate-referral/{code}")
+async def validate_referral_code(code: str, db: AsyncSession = Depends(get_db)):
+    """FIX #5: Validate a referral code before registration — returns 200 if valid, 404 if not."""
+    result = await db.execute(select(User).where(User.referral_code == code.upper()))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Referral code not found")
+    return {"valid": True, "referral_code": code.upper()}

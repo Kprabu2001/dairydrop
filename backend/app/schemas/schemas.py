@@ -207,6 +207,7 @@ class OrderOut(BaseModel):
     promo_code: Optional[str]
     points_earned: int
     points_redeemed: int
+    referral_credit_used: float = 0.0
     estimated_eta: Optional[str]
     notes: Optional[str]
     items: List[OrderItemOut]
@@ -292,6 +293,7 @@ class ReferralOut(BaseModel):
     total_referrals: int
     successful_referrals: int
     total_credit_earned: float
+    available_credit: float = 0.0
 
 
 # ── Subscription ────────────────────────────────────────────

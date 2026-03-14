@@ -108,12 +108,15 @@ async def place_order(
     cart_items = cart_res.scalars().all()
     if not cart_items:
         raise HTTPException(status_code=400, detail="Cart is empty")
+
+    # FIX #2: Load all products first, then compute subtotal ONCE — outside any loop
     for item in cart_items:
         await db.refresh(item, ["product"])
-    for item in cart_items:
-        subtotal = sum(i.product.price * i.quantity for i in cart_items)
-        discount = 0.0
-        promo_str = None
+
+    subtotal = sum(i.product.price * i.quantity for i in cart_items)
+    discount = 0.0
+    promo_str = None
+
     if payload.promo_code:
         pr = await db.execute(select(PromoCode).where(
             PromoCode.code == payload.promo_code.upper(), PromoCode.is_active == True
@@ -123,6 +126,7 @@ async def place_order(
             discount = subtotal * promo.discount_percent / 100
             promo.uses_count += 1
             promo_str = promo.code
+
     pts_discount = 0.0
     redeemed = 0
     lr = await db.execute(select(LoyaltyAccount).where(LoyaltyAccount.user_id == current_user.id))
@@ -132,28 +136,36 @@ async def place_order(
         pts_discount = (redeemed / 500) * 50  # 500 pts = ₹50
         loyalty.points -= redeemed
         db.add(LoyaltyTransaction(account_id=loyalty.id, points=-redeemed, description="Redeemed at checkout"))
-    # Referral credit — cap at actual referral earned, max 50% of subtotal
-    from app.api.routes.referrals import _get_referral_credit
-    available_credit = await _get_referral_credit(current_user.id, db)
+
+    # FIX #3: Use _get_available_referral_credit which subtracts already-used credits
+    from app.api.routes.referrals import _get_available_referral_credit
+    available_credit = await _get_available_referral_credit(current_user.id, db)
     referral_discount = min(float(payload.referral_credit or 0), available_credit, subtotal * 0.5)
     referral_discount = round(referral_discount, 2)
+
     delivery_fee = 29.00  # ₹29 delivery fee
     after = subtotal - discount - pts_discount - referral_discount
     tax = round(max(after, 0) * 0.05, 2)  # 5% GST
     total = round(max(after, 0) + delivery_fee + tax, 2)
     points_earned = int(total * 1)  # 1 pt per ₹1 spent
+
     order = Order(
         order_number=_order_number(), user_id=current_user.id, address_id=payload.address_id,
         subtotal=subtotal, discount=discount + pts_discount + referral_discount, delivery_fee=delivery_fee,
         tax=tax, total=total, promo_code=promo_str, points_earned=points_earned,
-        points_redeemed=redeemed, notes=payload.notes, estimated_eta="25-35 min",
+        points_redeemed=redeemed, referral_credit_used=referral_discount,
+        notes=payload.notes, estimated_eta="25-35 min",
     )
     db.add(order)
     await db.flush()
+
     for item in cart_items:
         db.add(OrderItem(order_id=order.id, product_id=item.product_id, quantity=item.quantity,
                          unit_price=item.product.price, total_price=item.product.price * item.quantity))
+        # FIX #4: Decrement product stock, floor at 0
+        item.product.stock = max(0, item.product.stock - item.quantity)
         await db.delete(item)
+
     if loyalty:
         loyalty.points += points_earned
         loyalty.total_earned += points_earned
@@ -186,6 +198,11 @@ async def cancel_order(
         raise HTTPException(status_code=400, detail=f"Cannot cancel order with status '{order.status.value}'.")
     order.status = OrderStatus.cancelled
     await db.refresh(order, ["items"])
+
+    # Restore stock for cancelled order items
+    for item in order.items:
+        await db.refresh(item, ["product"])
+        item.product.stock += item.quantity
 
     # Adjust loyalty: refund redeemed points, deduct earned points
     lr = await db.execute(select(LoyaltyAccount).where(LoyaltyAccount.user_id == current_user.id))
