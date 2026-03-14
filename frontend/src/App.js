@@ -638,9 +638,19 @@ export default function DairyApp() {
 
   const loadReferral = useCallback(async () => {
     try { const { data } = await referralsAPI.get(); setReferral(data); } catch {}
+    // Silently fails — referral code is always shown from user object
   }, []);
 
   useEffect(() => {
+    // ── Read ?ref= from URL and pre-fill referral code ──
+    const params = new URLSearchParams(window.location.search);
+    const refCode = params.get("ref");
+    if (refCode) {
+      setRegReferralCode(refCode.toUpperCase());
+      setRegReferralStatus("valid");
+      setAuthTab("register");
+      window.history.replaceState({}, "", window.location.pathname);
+    }
     const token = localStorage.getItem("access_token");
     if (token) {
       authAPI.me().then(res => {
@@ -720,8 +730,6 @@ export default function DairyApp() {
   const [adminCode, setAdminCode]         = useState("");
   const [showPassword, setShowPassword]   = useState(false);
   const [regConfirmPassword, setRegConfirmPassword]     = useState("");
-  const [regReferralCode, setRegReferralCode]           = useState("");
-  const [regReferralStatus, setRegReferralStatus]       = useState(null); // null | "valid" | "invalid" | "checking"
   const [adminConfirmPassword, setAdminConfirmPassword] = useState("");
 
   const doLogin = async () => {
@@ -754,19 +762,14 @@ export default function DairyApp() {
     if (regPassword !== regConfirmPassword) { setError("Passwords do not match"); return; }
     setLoading(true);
     try {
-      const { data } = await authAPI.register({ email: regEmail.trim(), full_name: regName.trim(), password: regPassword, ...(regReferralCode.trim() && { referral_code: regReferralCode.trim() }) });
+      const { data } = await authAPI.register({ email: regEmail.trim(), full_name: regName.trim(), password: regPassword });
       localStorage.setItem("access_token", data.access_token);
       localStorage.setItem("refresh_token", data.refresh_token);
       const me = await authAPI.me();
       setUser(me.data);
       setScreen("home");
     } catch (e) {
-      const detail = e.response?.data?.detail || "Registration failed";
-      // Surface referral code errors clearly
-      if (detail.toLowerCase().includes("referral")) {
-        setRegReferralStatus("invalid");
-      }
-      setError(detail);
+      setError(e.response?.data?.detail || "Registration failed");
     } finally { setLoading(false); }
   };
 
@@ -1379,52 +1382,25 @@ export default function DairyApp() {
               {regConfirmPassword && regPassword !== regConfirmPassword && (
                 <div style={{ fontSize: 12, color: "#ef5350", marginTop: -12, marginBottom: 14, fontWeight: 700 }}>⚠ Passwords do not match</div>
               )}
-              {/* Referral code field */}
-              {/* Referral code field with live validation */}
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: dark ? "#b0bec5" : "#546e7a", marginBottom: 6 }}>Referral Code <span style={{ fontWeight: 400, color: dark ? "#78909c" : "#90a4ae" }}>(optional)</span></div>
-                <div style={{ position: "relative" }}>
-                  <input
-                    value={regReferralCode}
-                    onChange={async e => {
-                      const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
-                      setRegReferralCode(val);
-                      if (!val) { setRegReferralStatus(null); return; }
-                      if (val.length >= 6) {
-                        setRegReferralStatus("checking");
-                        try {
-                          await import("./api").then(m => m.authAPI.validateReferralCode(val));
-                          setRegReferralStatus("valid");
-                        } catch {
-                          setRegReferralStatus("invalid");
-                        }
-                      } else {
-                        setRegReferralStatus(null);
-                      }
-                    }}
-                    type="text"
-                    placeholder="e.g. JOHN1234"
-                    maxLength={10}
-                    style={{ ...inputStyle, paddingRight: 40, borderColor: regReferralStatus === "valid" ? "#43a047" : regReferralStatus === "invalid" ? "#ef5350" : undefined }}
-                    onFocus={inputFocus} onBlur={inputBlur}
-                  />
-                  {regReferralStatus && (
-                    <span style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", fontSize: 16 }}>
-                      {regReferralStatus === "checking" ? "⏳" : regReferralStatus === "valid" ? "✅" : "❌"}
-                    </span>
-                  )}
+              {/* Referral banner — shown when pre-filled via link */}
+              {regReferralCode ? (
+                <div style={{ background: dark ? "#1a3a1b" : "#e8f5e9", border: "2px solid #43a047", borderRadius: 14, padding: "12px 16px", marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 22 }}>🎁</span>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: dark ? "#81c784" : "#2e7d32" }}>Referral code applied!</div>
+                    <div style={{ fontSize: 12, color: dark ? "#7aad7b" : "#5a8a5a" }}>You & your friend both get <strong>₹50 credit</strong> after your first order.</div>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 900, color: "#43a047", letterSpacing: 2, background: dark ? "#2e7d32" : "#c8e6c9", padding: "4px 10px", borderRadius: 8 }}>{regReferralCode}</div>
                 </div>
-                {regReferralStatus === "valid" && <div style={{ fontSize: 12, color: "#43a047", fontWeight: 700, marginTop: 4 }}>✓ Valid referral code — you'll both get ₹50 credit!</div>}
-                {regReferralStatus === "invalid" && <div style={{ fontSize: 12, color: "#ef5350", fontWeight: 700, marginTop: 4 }}>⚠ Invalid referral code. Check and try again.</div>}
-              </div>
-              {/* Promo banner */}
-              <div style={{ background: dark ? "#1a3a1b" : "#e8f5e9", border: "1.5px solid #43a047", borderRadius: 14, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
-                <span style={{ fontSize: 22 }}>🎁</span>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: dark ? "#81c784" : "#2e7d32" }}>New member offer</div>
-                  <div style={{ fontSize: 12, color: dark ? "#7aad7b" : "#5a8a5a" }}>Use code <strong>NEWUSER20</strong> for 20% off your first order!</div>
+              ) : (
+                <div style={{ background: dark ? "#1a3a1b" : "#e8f5e9", border: "1.5px solid #43a047", borderRadius: 14, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12 }}>
+                  <span style={{ fontSize: 22 }}>🎁</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: dark ? "#81c784" : "#2e7d32" }}>New member offer</div>
+                    <div style={{ fontSize: 12, color: dark ? "#7aad7b" : "#5a8a5a" }}>Use code <strong>NEWUSER20</strong> for 20% off your first order!</div>
+                  </div>
                 </div>
-              </div>
+              )}
               <button onClick={doRegister} disabled={loading} style={{
                 width: "100%", padding: "16px", border: "none", borderRadius: 16, fontSize: 16,
                 fontFamily: "'DM Sans', sans-serif", fontWeight: 700, cursor: loading ? "not-allowed" : "pointer",
@@ -2075,11 +2051,11 @@ export default function DairyApp() {
                 </div>
               )}
               {/* Referral Credit */}
-              {referral && (referral.available_credit ?? referral.total_credit_earned) > 0 && (
+              {referral && referral.total_credit_earned > 0 && (
                 <div style={{ ...S.card, padding: "18px 20px", marginBottom: 14 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>🎁 Referral Credit</div>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: "#22c55e" }}>₹{(referral.available_credit ?? referral.total_credit_earned).toFixed(0)} available</div>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#22c55e" }}>₹{referral.total_credit_earned.toFixed(0)} available</div>
                   </div>
                   <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Earned by referring friends. Applied directly to your order.</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -2089,9 +2065,9 @@ export default function DairyApp() {
                       <div style={{ fontSize: 20, fontWeight: 900, color: referralCredit > 0 ? "#22c55e" : T.muted }}>₹{referralCredit.toFixed(0)}</div>
                       {referralCredit > 0 && <div style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>applied ✓</div>}
                     </div>
-                    <button onClick={() => setReferralCredit(Math.min((referral.available_credit ?? referral.total_credit_earned), cartSubtotal * 0.5))}
-                      disabled={referralCredit >= Math.min((referral.available_credit ?? referral.total_credit_earned), cartSubtotal * 0.5)}
-                      style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: referralCredit >= Math.min((referral.available_credit ?? referral.total_credit_earned), cartSubtotal * 0.5) ? T.cardBorder : T.hero, color: "#fff", fontSize: 20, fontWeight: 900, cursor: referralCredit >= Math.min((referral.available_credit ?? referral.total_credit_earned), cartSubtotal * 0.5) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                    <button onClick={() => setReferralCredit(Math.min(referral.total_credit_earned, cartSubtotal * 0.5))}
+                      disabled={referralCredit >= Math.min(referral.total_credit_earned, cartSubtotal * 0.5)}
+                      style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: referralCredit >= Math.min(referral.total_credit_earned, cartSubtotal * 0.5) ? T.cardBorder : T.hero, color: "#fff", fontSize: 20, fontWeight: 900, cursor: referralCredit >= Math.min(referral.total_credit_earned, cartSubtotal * 0.5) ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                   </div>
                 </div>
               )}
@@ -2244,6 +2220,11 @@ export default function DairyApp() {
                   <span>₹{(item.total_price ?? 0).toFixed(2)}</span>
                 </div>
               ))}
+              {showInvoice.discount > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, color: "#2e7d32", marginTop: 8 }}>
+                  <span>Discount</span><span>−₹{(showInvoice.discount ?? 0).toFixed(2)}</span>
+                </div>
+              )}
               {[["Delivery", "₹29"], ["Tax", `₹${(showInvoice.tax ?? 0).toFixed(2)}`], ["Total", `₹${(showInvoice.total ?? 0).toFixed(2)}`]].map(([l, v]) => (
                 <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: l === "Total" ? 16 : 14, fontWeight: l === "Total" ? 900 : 400, color: l === "Total" ? T.text : T.subtext, marginTop: 8 }}>
                   <span>{l}</span><span>{v}</span>
@@ -2286,7 +2267,7 @@ export default function DairyApp() {
                 </div>
                 <div style={{ background: T.tag, borderRadius: 16, padding: "14px 16px", marginBottom: 14 }}>
                   <div style={{ fontSize: 13, color: T.subtext, marginBottom: 4 }}>Estimated arrival</div>
-                  <div style={{ fontSize: 28, fontWeight: 900, color: T.accent }}>{order.estimated_eta}</div>
+                  <div style={{ fontSize: 28, fontWeight: 900, color: T.accent }}>{order.estimated_eta || "25-35 min"}</div>
                 </div>
                 {(order.status === "pending" || order.status === "confirmed") && (
                   <button onClick={async () => {
@@ -2342,7 +2323,7 @@ export default function DairyApp() {
                   )}
                 </div>
                 <div style={{ fontSize: 13, color: T.muted, marginBottom: 10 }}>{new Date(order.created_at).toLocaleDateString()}</div>
-                {(order.items || []).map((item, i) => <div key={i} style={{ fontSize: 14, color: T.subtext }}>• {item.product?.name} × {item.quantity}</div>)}
+                {(order.items || []).filter(item => item.product).map((item, i) => <div key={i} style={{ fontSize: 14, color: T.subtext }}>• {item.product.name} × {item.quantity}</div>)}
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 12, fontWeight: 900, color: T.text }}>
                   <span>Total</span><span>₹{(order.total ?? 0).toFixed(2)}</span>
                 </div>
@@ -2353,9 +2334,15 @@ export default function DairyApp() {
                 ) : (
                   <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
                     <button onClick={async () => {
-                      for (const item of (order.items || [])) await cartAPI.update(item.product_id, item.quantity);
-                      await loadCart(); setScreen("cart");
-                    }} style={{ flex: 1, padding: "11px", background: T.tag, color: T.tagText, border: "none", borderRadius: 12, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>Reorder</button>
+                      try {
+                        for (const item of (order.items || [])) {
+                          if (item.product_id) await cartAPI.update(item.product_id, item.quantity);
+                        }
+                        await loadCart();
+                        showToast("Items added to cart!", "success");
+                        setScreen("cart");
+                      } catch(e) { showToast("Failed to reorder. Please try again."); }
+                    }} style={{ flex: 1, padding: "11px", background: T.tag, color: T.tagText, border: "none", borderRadius: 12, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>🔁 Reorder</button>
                     <button onClick={() => setShowInvoice(order)} style={{ flex: 1, padding: "11px", background: T.card, color: T.text, border: `2px solid ${T.cardBorder}`, borderRadius: 12, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>🧾 Invoice</button>
                   </div>
                 )}
@@ -2568,23 +2555,51 @@ export default function DairyApp() {
             <div style={{ fontSize: 24, fontWeight: 900, color: T.text, marginBottom: 8 }}>Give ₹50, Get ₹50</div>
             <div style={{ fontSize: 15, color: T.subtext, lineHeight: 1.6 }}>Share your code. You both get ₹50 credit when they place their first order!</div>
           </div>
+          {/* Referral code card — always shown using user object, no API needed */}
+          <div style={{ ...S.card, padding: "20px", marginBottom: 20, textAlign: "center" }}>
+            <div style={{ fontSize: 13, color: T.muted, marginBottom: 8 }}>Your referral code</div>
+            <div style={{ fontSize: 28, fontWeight: 900, color: T.accent, letterSpacing: 4, marginBottom: 16 }}>
+              {user?.referral_code || referral?.referral_code || "—"}
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
+              <button
+                onClick={() => {
+                  const code = user?.referral_code || referral?.referral_code || "";
+                  const link = `${window.location.origin}${window.location.pathname}?ref=${code}`;
+                  navigator.clipboard?.writeText(link);
+                  setReferralCopied(true);
+                  setTimeout(() => setReferralCopied(false), 3000);
+                }}
+                style={{ ...S.btn, padding: "14px 24px", flex: 1 }}>
+                {referralCopied ? "✅ Copied!" : "Copy Link"}
+              </button>
+              <button
+                onClick={() => {
+                  const code = user?.referral_code || referral?.referral_code || "";
+                  const link = `${window.location.origin}${window.location.pathname}?ref=${code}`;
+                  const msg = `🥛 Join DairyDrop & get ₹50 credit on your first order!\nUse my link: ${link}`;
+                  if (navigator.share) {
+                    navigator.share({ title: "Join DairyDrop — Get ₹50!", text: msg, url: link });
+                  } else {
+                    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+                  }
+                }}
+                style={{ ...S.btn, padding: "14px 18px", background: "#25D366", flex: 1 }}>
+                📤 Share Link
+              </button>
+            </div>
+          </div>
+          {/* Stats card — shown only when referral API data is available */}
           {referral && (
-            <>
-              <div style={{ ...S.card, padding: "20px", marginBottom: 20, textAlign: "center" }}>
-                <div style={{ fontSize: 13, color: T.muted, marginBottom: 8 }}>Your referral code</div>
-                <div style={{ fontSize: 28, fontWeight: 900, color: T.accent, letterSpacing: 4, marginBottom: 16 }}>{referral.referral_code}</div>
-                <button onClick={() => { navigator.clipboard?.writeText(referral.referral_code); setReferralCopied(true); }} style={{ ...S.btn, padding: "14px" }}>{referralCopied ? "✅ Copied!" : "Copy Code"}</button>
-              </div>
-              <div style={{ ...S.card, padding: "20px" }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 14 }}>Your Referrals</div>
-                {[["Total Referrals", referral.total_referrals], ["Successful", referral.successful_referrals], ["Credits Earned", `₹${referral.total_credit_earned.toFixed(2)}`], ["Available", `₹${(referral.available_credit ?? referral.total_credit_earned).toFixed(2)}`]].map(([l, v]) => (
-                  <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${T.cardBorder}` }}>
-                    <span style={{ fontSize: 14, color: T.subtext }}>{l}</span>
-                    <span style={{ fontWeight: 900, color: T.text }}>{v}</span>
-                  </div>
-                ))}
-              </div>
-            </>
+            <div style={{ ...S.card, padding: "20px" }}>
+              <div style={{ fontSize: 14, fontWeight: 800, color: T.text, marginBottom: 14 }}>Your Referrals</div>
+              {[["Total Referrals", referral.total_referrals], ["Successful", referral.successful_referrals], ["Credits Earned", `₹${referral.total_credit_earned?.toFixed(2) ?? "0.00"}`], ["Available Credit", `₹${(referral.available_credit ?? referral.total_credit_earned ?? 0).toFixed(2)}`]].map(([l, v]) => (
+                <div key={l} style={{ display: "flex", justifyContent: "space-between", padding: "10px 0", borderBottom: `1px solid ${T.cardBorder}` }}>
+                  <span style={{ fontSize: 14, color: T.subtext }}>{l}</span>
+                  <span style={{ fontWeight: 900, color: T.text }}>{v}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </>

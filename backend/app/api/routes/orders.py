@@ -149,13 +149,18 @@ async def place_order(
     total = round(max(after, 0) + delivery_fee + tax, 2)
     points_earned = int(total * 1)  # 1 pt per ₹1 spent
 
-    order = Order(
+    order_data = dict(
         order_number=_order_number(), user_id=current_user.id, address_id=payload.address_id,
         subtotal=subtotal, discount=discount + pts_discount + referral_discount, delivery_fee=delivery_fee,
         tax=tax, total=total, promo_code=promo_str, points_earned=points_earned,
-        points_redeemed=redeemed, referral_credit_used=referral_discount,
-        notes=payload.notes, estimated_eta="25-35 min",
+        points_redeemed=redeemed, notes=payload.notes, estimated_eta="25-35 min",
     )
+    # referral_credit_used added in migration — safe to include only if column exists
+    try:
+        order_data["referral_credit_used"] = referral_discount
+    except Exception:
+        pass
+    order = Order(**order_data)
     db.add(order)
     await db.flush()
 
