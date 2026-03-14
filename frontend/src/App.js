@@ -320,6 +320,9 @@ export default function DairyApp() {
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [productReviews, setProductReviews]   = useState([]);
   const [loading, setLoading]         = useState(false);
+  const [productsLoading, setProductsLoading] = useState(true);
+  const [confirmModal, setConfirmModal] = useState(null); // { title, message, danger, onConfirm }
+  const [productsError, setProductsError]     = useState(false);
   const [error, setError]             = useState("");
   const [toasts, setToasts]           = useState([]);  // [{id, msg, type}]
   const [onboardStep, setOnboardStep] = useState(0);
@@ -377,7 +380,7 @@ export default function DairyApp() {
   const [productFormError, setProductFormError] = useState("");
   const [showProductForm, setShowProductForm] = useState(false);
   const [editingProduct, setEditingProduct]   = useState(null);
-  const [productForm, setProductForm]         = useState({ name:"", description:"", price:"", unit:"", category:"Milk", emoji:"🥛", badge:"", stock:100, calories:"", protein:"", fat:"", carbs:"" });
+  const [productForm, setProductForm]         = useState({ name:"", description:"", price:"", unit:"", category:"Milk", emoji:"🥛", badge:"", calories:"", protein:"", fat:"", carbs:"" });
 
   // ── Support state ─────────────────────────────────────────
   const [supportTickets, setSupportTickets]       = useState([]);
@@ -468,6 +471,9 @@ export default function DairyApp() {
   };
 
   // ── Global toast helper ─────────────────────────────────────
+  const showConfirm = React.useCallback(({ title, message, confirmLabel = "Confirm", danger = false, onConfirm }) => {
+    setConfirmModal({ title, message, confirmLabel, danger, onConfirm });
+  }, []);
   const showToast = React.useCallback((msg, type = "error") => {
     const id = Date.now() + Math.random();
     setToasts(t => [...t, { id, msg, type }]);
@@ -550,6 +556,20 @@ export default function DairyApp() {
       )}
       <div className="dd-frame" style={{ background: T.phoneBg }}>
         {children}
+        {/* ── Confirm Modal ── */}
+        {confirmModal && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 99999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)", padding: 24 }}
+            onClick={e => { if (e.target === e.currentTarget) setConfirmModal(null); }}>
+            <div style={{ background: dark ? "#1c2b1d" : "#fff", borderRadius: 24, padding: "28px 24px", width: "100%", maxWidth: 320, boxShadow: "0 20px 60px rgba(0,0,0,0.35)" }}>
+              <div style={{ fontSize: 20, fontWeight: 900, color: confirmModal.danger ? "#e53935" : (dark ? "#fff" : "#1a1a1a"), marginBottom: 10 }}>{confirmModal.title}</div>
+              <div style={{ fontSize: 14, color: dark ? "#9e9e9e" : "#666", lineHeight: 1.6, marginBottom: 24 }}>{confirmModal.message}</div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <button onClick={() => setConfirmModal(null)} style={{ flex: 1, padding: "13px", background: dark ? "rgba(255,255,255,0.08)" : "#f0f0f0", color: dark ? "#ccc" : "#555", border: "none", borderRadius: 14, fontSize: 14, fontWeight: 700, cursor: "pointer" }}>Cancel</button>
+                <button onClick={() => { const fn = confirmModal.onConfirm; setConfirmModal(null); fn(); }} style={{ flex: 1, padding: "13px", background: confirmModal.danger ? "#e53935" : "#2e7d32", color: "#fff", border: "none", borderRadius: 14, fontSize: 14, fontWeight: 800, cursor: "pointer" }}>{confirmModal.confirmLabel}</button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* ── Global toast stack ── */}
         <div style={{ position: "fixed", bottom: "calc(72px + env(safe-area-inset-bottom,0px))", left: "50%", transform: "translateX(-50%)", zIndex: 9999, display: "flex", flexDirection: "column", alignItems: "center", gap: 8, pointerEvents: "none", width: "100%", padding: "0 16px" }}>
           {toasts.map(t => (
@@ -572,10 +592,12 @@ export default function DairyApp() {
 
   // ── Data loaders ──────────────────────────────────────────
   const loadProducts = useCallback(async () => {
+    setProductsLoading(true); setProductsError(false);
     try {
       const { data } = await productsAPI.list({ category: category !== "All" ? category : undefined, search: search || undefined });
       setProducts(data);
-    } catch {}
+    } catch { setProductsError(true); }
+    finally { setProductsLoading(false); }
   }, [category, search]);
 
   const loadWishlist = useCallback(async () => {
@@ -658,11 +680,8 @@ export default function DairyApp() {
   const cartCount    = cart.reduce((s, i) => s + i.quantity, 0);
   const cartSubtotal = cart.reduce((s, i) => s + i.product.price * i.quantity, 0);
   const discount     = appliedPromo ? cartSubtotal * appliedPromo.discount_percent / 100 : 0;
-  const maxRedeemable = loyalty ? Math.min(Math.floor(loyalty.points / 100) * 100, Math.floor(cartSubtotal * 0.5 / 10) * 100) : 0;
-  const pointsDiscount = Math.min(Math.floor(redeemPoints / 100) * 10, cartSubtotal * 0.5);  // 100 pts = ₹10, max 50% of subtotal
-  const afterDiscount = cartSubtotal - discount - pointsDiscount;
-  const deliveryFee  = afterDiscount >= 499 ? 0 : 29;
-  const cartTotal    = Math.max(0, afterDiscount + deliveryFee + cartSubtotal * 0.05);
+  const pointsDiscount = Math.floor(redeemPoints / 500) * 50;  // 500 pts = ₹50
+  const cartTotal    = Math.max(0, cartSubtotal - discount - pointsDiscount + 29.00 + cartSubtotal * 0.05);
   const unreadNotifs = notifications.filter(n => !n.is_read).length;
 
   const updateCart = async (productId, quantity) => {
@@ -1450,8 +1469,6 @@ export default function DairyApp() {
                 <span style={{ fontWeight: 900, fontSize: 18, color: T.text }}>{getQty(p.id)}</span>
                 <button onClick={() => updateCart(p.id, getQty(p.id) + 1)} style={{ background: "none", border: "none", color: T.accent, fontSize: 22, fontWeight: 900, cursor: "pointer" }}>+</button>
               </div>
-            ) : p.stock === 0 ? (
-              <div style={{ background: "#ffebee", color: "#c62828", borderRadius: 16, padding: "12px 28px", fontSize: 14, fontWeight: 800, textAlign: "center" }}>😔 Sold Out</div>
             ) : (
               <button onClick={() => updateCart(p.id, 1)} style={{ background: T.hero, color: "#fff", border: "none", borderRadius: 16, padding: "12px 28px", fontSize: 15, fontWeight: 800, cursor: "pointer" }}>Add to Cart</button>
             )}
@@ -1572,7 +1589,7 @@ export default function DairyApp() {
                     <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>{p.unit}</div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                       <span style={{ fontSize: 15, fontWeight: 900, color: T.accent }}>₹{p.price}</span>
-                      {p.stock === 0 && <span style={{ fontSize: 10, fontWeight: 800, color: "#ef4444", background: "#fee2e2", borderRadius: 6, padding: "2px 6px" }}>Out of stock</span>}
+
                     </div>
                   </div>
                   {/* Actions */}
@@ -1587,10 +1604,7 @@ export default function DairyApp() {
                         <button onClick={() => updateCart(p.id, qty + 1)} style={{ background: "none", border: "none", color: T.accent, fontSize: 16, fontWeight: 900, cursor: "pointer" }}>+</button>
                       </div>
                     ) : (
-                      <button onClick={() => updateCart(p.id, 1)} disabled={p.stock === 0}
-                        style={{ background: p.stock === 0 ? T.muted : T.hero, color: "#fff", border: "none", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 800, cursor: p.stock === 0 ? "not-allowed" : "pointer" }}>
-                        {p.stock === 0 ? "Sold out" : "Add"}
-                      </button>
+                      <button onClick={() => updateCart(p.id, 1)} style={{ background: T.hero, color: "#fff", border: "none", borderRadius: 10, padding: "6px 12px", fontSize: 12, fontWeight: 800, cursor: "pointer" }}>Add</button>
                     )}
                   </div>
                 </div>
@@ -1638,7 +1652,7 @@ export default function DairyApp() {
       { q: "When do you deliver?", a: "We deliver 7AM–9PM daily, 7 days a week." },
       { q: "What is the delivery fee?", a: "Just ₹29 per order. Free delivery on orders over ₹499!" },
       { q: "How do I return a product?", a: "Returns are accepted within 24 hours of delivery. Contact support with your order number." },
-      { q: "How do loyalty points work?", a: "You earn 1 point per ₹10 spent. Redeem 100 points for ₹10 off — up to 50% of your order value." },
+      { q: "How do loyalty points work?", a: "You earn 1 point per ₹1 spent. Redeem 500 points for ₹50 off any order." },
       { q: "Can I cancel an order?", a: "Yes! You can cancel pending or confirmed orders from the Orders screen before it's packed." },
       { q: "How do promo codes work?", a: "Enter your promo code at checkout. Codes like NEWUSER20 give 20% off your first order." },
       { q: "What areas do you deliver to?", a: "We currently cover most metro areas. Enter your address at checkout to confirm availability." },
@@ -1673,7 +1687,7 @@ export default function DairyApp() {
               order: `Your latest order is ${orders[0]?.status?.replace("_"," ") || "being processed"}! Check the Orders tab for details.`,
               delivery: "We deliver 7AM–9PM daily. ₹29 delivery fee — free on orders over ₹499! 🚚",
               return: "Returns accepted within 24 hours — tap 'New Ticket' to contact our team.",
-              points: `You have ${loyalty?.points || 0} loyalty points (${loyalty?.tier || "bronze"} tier)! 100 pts = ₹10 off, up to 50% of order.`,
+              points: `You have ${loyalty?.points || 0} loyalty points (${loyalty?.tier || "bronze"} tier)! 500 pts = ₹50 off.`,
               cancel: "You can cancel pending or confirmed orders from the Orders tab. Tap the order to see the Cancel button.",
             };
             const reply = Object.entries(REPLIES).find(([k]) => q.includes(k));
@@ -1906,7 +1920,7 @@ export default function DairyApp() {
                   <div style={{ fontSize: 28 }}>⭐</div>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>Loyalty Points</div>
-                    <div style={{ fontSize: 12, color: T.muted }}>{loyalty.points} pts · Redeem 100 = ₹10 off (max 50%)</div>
+                    <div style={{ fontSize: 12, color: T.muted }}>{loyalty.points} pts · Redeem 500 = $5 off</div>
                   </div>
                 </div>
               )}
@@ -1993,44 +2007,24 @@ export default function DairyApp() {
                     <div style={{ fontSize: 14, fontWeight: 800, color: T.text }}>⭐ Use Loyalty Points</div>
                     <div style={{ fontSize: 12, fontWeight: 700, color: "#f59e0b" }}>{loyalty.points} pts available</div>
                   </div>
-                  <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Every 100 points = ₹10 off. Max 50% of order value. Points used: multiples of 100 only.</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Every 500 points = ₹50 off. Points used: multiples of 500 only.</div>
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <button onClick={() => setRedeemPoints(Math.max(0, redeemPoints - 100))} disabled={redeemPoints === 0}
+                    <button onClick={() => setRedeemPoints(Math.max(0, redeemPoints - 500))} disabled={redeemPoints === 0}
                       style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: redeemPoints === 0 ? T.cardBorder : T.tag, color: redeemPoints === 0 ? T.muted : T.accent, fontSize: 20, fontWeight: 900, cursor: redeemPoints === 0 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
                     <div style={{ flex: 1, textAlign: "center" }}>
                       <div style={{ fontSize: 20, fontWeight: 900, color: redeemPoints > 0 ? T.accent : T.muted }}>{redeemPoints} pts</div>
-                      {redeemPoints > 0 && <div style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>−₹{pointsDiscount.toFixed(2)} off</div>}
+                      {redeemPoints > 0 && <div style={{ fontSize: 12, color: "#22c55e", fontWeight: 700 }}>−₹{Math.floor(redeemPoints / 500) * 50} off</div>}
                     </div>
-                    <button onClick={() => setRedeemPoints(Math.min(maxRedeemable, redeemPoints + 100))}
-                      disabled={redeemPoints >= maxRedeemable}
-                      style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: redeemPoints >= maxRedeemable ? T.cardBorder : T.hero, color: "#fff", fontSize: 20, fontWeight: 900, cursor: redeemPoints >= maxRedeemable ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                    <button onClick={() => setRedeemPoints(Math.min(Math.floor(loyalty.points / 500) * 500, redeemPoints + 500))}
+                      disabled={redeemPoints >= Math.floor(loyalty.points / 500) * 500}
+                      style={{ width: 36, height: 36, borderRadius: "50%", border: "none", background: redeemPoints >= Math.floor(loyalty.points / 500) * 500 ? T.cardBorder : T.hero, color: "#fff", fontSize: 20, fontWeight: 900, cursor: redeemPoints >= Math.floor(loyalty.points / 500) * 500 ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
                   </div>
-                </div>
-              )}
-              {/* Free delivery progress banner */}
-              {afterDiscount < 499 && (
-                <div style={{ background: dark ? "rgba(34,197,94,0.1)" : "#f0fdf4", border: `1px solid ${dark ? "rgba(34,197,94,0.2)" : "#bbf7d0"}`, borderRadius: 12, padding: "10px 14px", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>🚚</span>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: dark ? "#4ade80" : "#15803d" }}>
-                      Add ₹{(499 - afterDiscount).toFixed(2)} more for FREE delivery!
-                    </div>
-                    <div style={{ marginTop: 5, height: 4, borderRadius: 99, background: dark ? "rgba(255,255,255,0.1)" : "#dcfce7", overflow: "hidden" }}>
-                      <div style={{ height: "100%", borderRadius: 99, background: "#22c55e", width: `${Math.min(100, (afterDiscount / 499) * 100)}%`, transition: "width 0.3s" }} />
-                    </div>
-                  </div>
-                </div>
-              )}
-              {afterDiscount >= 499 && (
-                <div style={{ background: dark ? "rgba(34,197,94,0.1)" : "#f0fdf4", border: `1px solid ${dark ? "rgba(34,197,94,0.2)" : "#bbf7d0"}`, borderRadius: 12, padding: "10px 14px", marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 16 }}>🎉</span>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: dark ? "#4ade80" : "#15803d" }}>You've unlocked FREE delivery!</div>
                 </div>
               )}
               {/* Summary */}
               <div style={{ ...S.card, padding: "20px", marginBottom: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 800, color: T.text, marginBottom: 14 }}>Order Summary</div>
-                {[["Subtotal", `₹${cartSubtotal.toFixed(2)}`], ...(appliedPromo ? [[`Discount (${appliedPromo.discount_percent}%)`, `-₹${discount.toFixed(2)}`]] : []), ...(redeemPoints > 0 ? [[`Points (${redeemPoints} pts)`, `-₹${pointsDiscount.toFixed(2)}`]] : []), ["Delivery fee", deliveryFee === 0 ? "FREE 🎉" : "₹29"], ["Tax (5% GST)", `₹${(cartSubtotal * 0.05).toFixed(2)}`]].map(([l, v]) => (
+                {[["Subtotal", `₹${cartSubtotal.toFixed(2)}`], ...(appliedPromo ? [[`Discount (${appliedPromo.discount_percent}%)`, `-₹${discount.toFixed(2)}`]] : []), ...(redeemPoints > 0 ? [[`Points (${redeemPoints} pts)`, `-₹${pointsDiscount.toFixed(2)}`]] : []), ["Delivery fee", "₹29"], ["Tax (5% GST)", `₹${(cartSubtotal * 0.05).toFixed(2)}`]].map(([l, v]) => (
                   <div key={l} style={{ display: "flex", justifyContent: "space-between", marginBottom: 8, fontSize: 14, color: l.startsWith("Discount") ? T.accent : T.subtext }}>
                     <span>{l}</span><span style={{ fontWeight: l.startsWith("Discount") ? 800 : 400 }}>{v}</span>
                   </div>
@@ -2175,7 +2169,7 @@ export default function DairyApp() {
                   <span>₹{(item.total_price ?? 0).toFixed(2)}</span>
                 </div>
               ))}
-              {[["Delivery", showInvoice.delivery_fee === 0 ? "FREE 🎉" : "₹29"], ["Tax", `₹${(showInvoice.tax ?? 0).toFixed(2)}`], ["Total", `₹${(showInvoice.total ?? 0).toFixed(2)}`]].map(([l, v]) => (
+              {[["Delivery", "₹29"], ["Tax", `₹${(showInvoice.tax ?? 0).toFixed(2)}`], ["Total", `₹${(showInvoice.total ?? 0).toFixed(2)}`]].map(([l, v]) => (
                 <div key={l} style={{ display: "flex", justifyContent: "space-between", fontSize: l === "Total" ? 16 : 14, fontWeight: l === "Total" ? 900 : 400, color: l === "Total" ? T.text : T.subtext, marginTop: 8 }}>
                   <span>{l}</span><span>{v}</span>
                 </div>
@@ -2221,11 +2215,19 @@ export default function DairyApp() {
                 </div>
                 {(order.status === "pending" || order.status === "confirmed") && (
                   <button onClick={async () => {
-                    if (!window.confirm("Are you sure you want to cancel this order?")) return;
-                    try {
-                      await ordersAPI.cancel(order.id, "Cancelled by customer");
-                      await loadOrders();
-                    } catch(e) { showToast(e.response?.data?.detail || "Could not cancel order."); }
+                    showConfirm({
+                      title: "Cancel Order?",
+                      message: `Cancel order ${order.order_number}? This cannot be undone.`,
+                      confirmLabel: "Yes, Cancel",
+                      danger: true,
+                      onConfirm: async () => {
+                        try {
+                          await ordersAPI.cancel(order.id, "Cancelled by customer");
+                          await loadOrders();
+                          showToast("Order cancelled", "success");
+                        } catch(e) { showToast(e.response?.data?.detail || "Could not cancel order."); }
+                      }
+                    });
                   }} style={{ width: "100%", padding: "10px", background: "#ffebee", color: "#c62828", border: "1px solid #ef9a9a", borderRadius: 12, fontSize: 13, fontWeight: 800, cursor: "pointer", marginBottom: 14 }}>
                     ✕ Cancel Order
                   </button>
@@ -2276,17 +2278,8 @@ export default function DairyApp() {
                 ) : (
                   <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
                     <button onClick={async () => {
-                      const skipped = [];
-                      for (const item of (order.items || [])) {
-                        if (item.product?.stock === 0) { skipped.push(item.product.name); continue; }
-                        await cartAPI.update(item.product_id, item.quantity);
-                      }
-                      await loadCart();
-                      if (skipped.length > 0 && skipped.length === (order.items || []).length) {
-                        showToast("All items are out of stock", "error"); return;
-                      }
-                      if (skipped.length > 0) showToast(skipped.join(", ") + " skipped — out of stock");
-                      setScreen("cart");
+                      for (const item of (order.items || [])) await cartAPI.update(item.product_id, item.quantity);
+                      await loadCart(); setScreen("cart");
                     }} style={{ flex: 1, padding: "11px", background: T.tag, color: T.tagText, border: "none", borderRadius: 12, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>Reorder</button>
                     <button onClick={() => setShowInvoice(order)} style={{ flex: 1, padding: "11px", background: T.card, color: T.text, border: `2px solid ${T.cardBorder}`, borderRadius: 12, fontSize: 13, fontWeight: 800, cursor: "pointer" }}>🧾 Invoice</button>
                   </div>
@@ -2497,8 +2490,8 @@ export default function DairyApp() {
         <div style={{ ...S.scroll, padding: "24px", background: T.screenBg }}>
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div style={{ fontSize: 72, marginBottom: 12 }}>🎁</div>
-            <div style={{ fontSize: 24, fontWeight: 900, color: T.text, marginBottom: 8 }}>Give ₹50, Get ₹50</div>
-            <div style={{ fontSize: 15, color: T.subtext, lineHeight: 1.6 }}>Share your code. You both get ₹50 credit when they place their first order!</div>
+            <div style={{ fontSize: 24, fontWeight: 900, color: T.text, marginBottom: 8 }}>Give $5, Get $5</div>
+            <div style={{ fontSize: 15, color: T.subtext, lineHeight: 1.6 }}>Share your code. You both get $5 credit when they place their first order!</div>
           </div>
           {referral && (
             <>
@@ -2852,20 +2845,18 @@ export default function DairyApp() {
                 <div className="dd-stats-grid" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 }}>
                   {[
                     ["💰 Total Revenue", `₹${adminStats.total_revenue.toFixed(2)}`, "#e8f5e9"],
-                    ["📦 Orders Today", adminStats.orders_today, "#e3f2fd"],
+                    ["🛒 Orders Today", adminStats.orders_today, "#e3f2fd"],
                     ["📅 This Week", adminStats.orders_this_week, "#fff8e1"],
+                    ["📋 Total Orders", adminStats.total_orders, "#fff3e0"],
                     ["👥 Total Users", adminStats.total_users, "#f3e5f5"],
                     ["✅ Active Users", adminStats.active_users, "#e0f2f1"],
-                    ["⚠️ Low Stock", adminStats.low_stock_products, adminStats.low_stock_products > 0 ? "#ffebee" : "#e8f5e9"],
+                    ["🥛 Products", adminStats.total_products ?? 0, "#e8f5e9"],
                   ].map(([label, val, bg]) => (
                     <div key={label} style={{ background: bg, borderRadius: 16, padding: "16px", textAlign: "center" }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: T.subtext, marginBottom: 4 }}>{label}</div>
                       <div style={{ fontSize: 22, fontWeight: 900, color: T.text }}>{val}</div>
                     </div>
                   ))}
-                </div>
-                <div style={{ ...S.card, padding:16, background: "#fff3e0", borderRadius:14 }}>
-                  <div style={{ fontSize:13, fontWeight:800, color:"#e65100" }}>Total Orders: {adminStats.total_orders}</div>
                 </div>
               </div>
             ) : <div style={{ textAlign:"center", padding:40, color:T.muted }}>No data yet</div>
@@ -2903,7 +2894,7 @@ export default function DairyApp() {
                       <div style={{ fontSize:15, fontWeight:900, color:T.accent }}>{p.code}</div>
                       <div style={{ display:"flex", gap:8 }}>
                         <button onClick={async () => { await adminAPI.updatePromo(p.id, { is_active: !p.is_active }); await loadAdminPromos(); }} style={{ background: p.is_active ? "#ffebee" : "#e8f5e9", border:"none", borderRadius:8, padding:"5px 10px", color: p.is_active ? "#c62828" : "#2e7d32", fontWeight:800, cursor:"pointer", fontSize:11 }}>{p.is_active ? "Deactivate" : "Activate"}</button>
-                        <button onClick={async () => { if(window.confirm("Delete this promo?")) { await adminAPI.deletePromo(p.id); await loadAdminPromos(); } }} style={{ background:"#ffebee", border:"none", borderRadius:8, padding:"5px 10px", color:"#c62828", fontWeight:800, cursor:"pointer", fontSize:13 }}>🗑</button>
+                        <button onClick={() => showConfirm({ title: "Delete Promo?", message: `Delete code "${p.code}"? This cannot be undone.`, confirmLabel: "Delete", danger: true, onConfirm: async () => { await adminAPI.deletePromo(p.id); await loadAdminPromos(); showToast("Promo deleted", "success"); } })} style={{ background:"#ffebee", border:"none", borderRadius:8, padding:"5px 10px", color:"#c62828", fontWeight:800, cursor:"pointer", fontSize:13 }}>🗑</button>
                       </div>
                     </div>
                     <div style={{ fontSize:13, color:T.subtext }}>{p.discount_percent}% off · Min ${p.min_order_value} · Used {p.uses_count}/{p.max_uses || "∞"}</div>
@@ -2952,7 +2943,7 @@ export default function DairyApp() {
           {/* ── PRODUCTS TAB ── */}
           {adminTab === "products" && (
             <>
-              <button onClick={() => { setEditingProduct(null); setProductForm({ name:"", description:"", price:"", unit:"", category:"Milk", emoji:"🥛", badge:"", stock:100, calories:"", protein:"", fat:"", carbs:"" }); setShowProductForm(true); }} style={{ ...S.btn, marginBottom:16 }}>+ Add New Product</button>
+              <button onClick={() => { setEditingProduct(null); setProductForm({ name:"", description:"", price:"", unit:"", category:"Milk", emoji:"🥛", badge:"", calories:"", protein:"", fat:"", carbs:"" }); setShowProductForm(true); }} style={{ ...S.btn, marginBottom:16 }}>+ Add New Product</button>
 
               {showProductForm && (
                 <div style={{ ...S.card, padding:"20px", marginBottom:16 }}>
@@ -2961,7 +2952,7 @@ export default function DairyApp() {
                     ["Name", "name", "text"], ["Description", "description", "text"],
                     ["Price (₹)", "price", "number"], ["Unit (e.g. 1 gallon)", "unit", "text"],
                     ["Emoji", "emoji", "text"], ["Badge (bestseller/new/popular)", "badge", "text"],
-                    ["Stock", "stock", "number"], ["Calories", "calories", "number"],
+                    ["Calories", "calories", "number"],
                     ["Protein", "protein", "text"], ["Fat", "fat", "text"], ["Carbs", "carbs", "text"],
                   ].map(([label, key, type]) => (
                     <div key={key} style={{ marginBottom:10 }}>
@@ -2986,9 +2977,8 @@ export default function DairyApp() {
                       if (!PF.name.trim()) { setProductFormError("Product name is required"); return; }
                       if (!PF.price || isNaN(parseFloat(PF.price)) || parseFloat(PF.price) <= 0) { setProductFormError("Please enter a valid price greater than 0"); return; }
                       if (!PF.unit.trim()) { setProductFormError("Unit is required (e.g. 1 litre, 500g)"); return; }
-                      if (!PF.stock || isNaN(parseInt(PF.stock)) || parseInt(PF.stock) < 0) { setProductFormError("Please enter a valid stock quantity"); return; }
                       try {
-                        const payload = { ...PF, name: PF.name.trim(), unit: PF.unit.trim(), price: parseFloat(PF.price), stock: parseInt(PF.stock), calories: PF.calories ? parseInt(PF.calories) : null };
+                        const payload = { ...PF, name: PF.name.trim(), unit: PF.unit.trim(), price: parseFloat(PF.price), calories: PF.calories ? parseInt(PF.calories) : null };
                         if (editingProduct) { await api.put("/products/" + editingProduct.id, payload); }
                         else { await api.post("/products/", payload); }
                         setShowProductForm(false); setEditingProduct(null); setProductFormError("");
@@ -3007,12 +2997,12 @@ export default function DairyApp() {
                     <div style={{ fontSize:36 }}>{p.emoji}</div>
                     <div style={{ flex:1 }}>
                       <div style={{ fontWeight:800, fontSize:14, color:T.text }}>{p.name}</div>
-                      <div style={{ fontSize:12, color:T.muted }}>₹{p.price} · {p.unit} · Stock: {p.stock}</div>
+                      <div style={{ fontSize:12, color:T.muted }}>₹{p.price} · {p.unit}</div>
                       <div style={{ fontSize:11, color: p.is_active ? T.accent : T.danger }}>{p.is_active ? "● Active" : "● Inactive"}</div>
                     </div>
                     <div style={{ display:"flex", gap:8 }}>
-                      <button onClick={() => { setEditingProduct(p); setProductForm({ name:p.name, description:p.description||"", price:p.price, unit:p.unit, category:p.category, emoji:p.emoji||"", badge:p.badge||"", stock:p.stock, calories:p.calories||"", protein:p.protein||"", fat:p.fat||"", carbs:p.carbs||"" }); setShowProductForm(true); }} style={{ background:T.tag, border:"none", borderRadius:10, padding:"8px 12px", color:T.tagText, fontWeight:800, cursor:"pointer", fontSize:13 }}>✏️</button>
-                      <button onClick={async () => { if(window.confirm(`Delete "${p.name}"? This cannot be undone.`)) { try { await api.delete("/products/" + p.id); await loadAdminProducts(); showToast("Product deleted", "success"); } catch(e) { showToast(e.response?.data?.detail || "Failed to delete product"); } } }} style={{ background:"#ffebee", border:"none", borderRadius:10, padding:"8px 12px", color:"#c62828", fontWeight:800, cursor:"pointer", fontSize:13 }}>🗑</button>
+                      <button onClick={() => { setEditingProduct(p); setProductForm({ name:p.name, description:p.description||"", price:p.price, unit:p.unit, category:p.category, emoji:p.emoji||"", badge:p.badge||"", calories:p.calories||"", protein:p.protein||"", fat:p.fat||"", carbs:p.carbs||"" }); setShowProductForm(true); }} style={{ background:T.tag, border:"none", borderRadius:10, padding:"8px 12px", color:T.tagText, fontWeight:800, cursor:"pointer", fontSize:13 }}>✏️</button>
+                      <button onClick={() => showConfirm({ title: "Delete Product?", message: `Delete "${p.name}"? This cannot be undone.`, confirmLabel: "Delete", danger: true, onConfirm: async () => { try { await api.delete("/products/" + p.id); await loadAdminProducts(); showToast("Product deleted", "success"); } catch(e) { showToast(e.response?.data?.detail || "Failed to delete product"); } } })} style={{ background:"#ffebee", border:"none", borderRadius:10, padding:"8px 12px", color:"#c62828", fontWeight:800, cursor:"pointer", fontSize:13 }}>🗑</button>
                     </div>
                   </div>
                 ))
@@ -3030,7 +3020,7 @@ export default function DairyApp() {
       <div className="dd-header-pad" style={{ background: T.hero, padding: "0 24px 24px" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
           <div>
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)" }}>Good morning 👋</div>
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.7)" }}>{(() => { const h = new Date().getHours(); return h < 12 ? "Good morning 🌅" : h < 17 ? "Good afternoon ☀️" : h < 21 ? "Good evening 🌆" : "Good night 🌙"; })()}  👋</div>
             <div style={{ fontSize: 22, fontWeight: 900, color: "#fff" }}>{user?.full_name?.split(" ")[0] || "Guest"}</div>
           </div>
           <div style={{ display: "flex", gap: 10 }}>
@@ -3069,16 +3059,39 @@ export default function DairyApp() {
             ))}
           </div>
         </div>
-        {products.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "40px", color: T.muted }}>Loading products...</div>
+        {productsLoading ? (
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div style={{ fontSize: 36, marginBottom: 12, animation: "dd-pulse 1.2s ease-in-out infinite" }}>🥛</div>
+            <div style={{ fontSize: 14, color: T.muted, fontWeight: 600 }}>Loading fresh products...</div>
+          </div>
+        ) : productsError ? (
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>😕</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text, marginBottom: 8 }}>Couldn't load products</div>
+            <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>Check your connection and try again.</div>
+            <button onClick={loadProducts} style={{ padding: "12px 28px", background: T.hero, color: "#fff", border: "none", borderRadius: 14, fontSize: 14, fontWeight: 800, cursor: "pointer" }}>Try Again</button>
+          </div>
+        ) : products.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "60px 20px" }}>
+            <div style={{ fontSize: 56, marginBottom: 12 }}>🔍</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: T.text, marginBottom: 8 }}>
+              {search ? `No results for "${search}"` : "No products found"}
+            </div>
+            <div style={{ fontSize: 13, color: T.muted, marginBottom: 20 }}>
+              {search ? "Try a different search term or browse all products." : "Try a different category."}
+            </div>
+            {(search || category !== "All") && (
+              <button onClick={() => { setSearch(""); setCategory("All"); }} style={{ padding: "12px 28px", background: T.hero, color: "#fff", border: "none", borderRadius: 14, fontSize: 14, fontWeight: 800, cursor: "pointer" }}>Clear Filters</button>
+            )}
+          </div>
         ) : (
           <div className="dd-product-grid" style={{}}>
             {products.map(product => (
               <div key={product.id} style={{ ...S.card, borderRadius: 22, overflow: "hidden" }}>
                 <div onClick={async () => { setSelectedProduct(product); const { data } = await reviewsAPI.forProduct(product.id); setProductReviews(data); setScreen("product"); }} style={{ background: dark ? T.tag : "#f1f8e9", padding: "20px 16px 16px", position: "relative", cursor: "pointer" }}>
                   {product.badge && <div style={{ position: "absolute", top: 10, left: 10, background: product.badge === "bestseller" ? "#ff6f00" : product.badge === "popular" ? "#6a1b9a" : "#00838f", color: "#fff", borderRadius: 8, padding: "3px 8px", fontSize: 9, fontWeight: 800, textTransform: "uppercase" }}>{product.badge}</div>}
-                  {product.stock < 10 && product.stock > 0 && <div style={{ position: "absolute", top: 10, right: 10, background: "#e53935", color: "#fff", borderRadius: 8, padding: "3px 8px", fontSize: 9, fontWeight: 800 }}>Only {product.stock} left!</div>}
-                  {product.stock === 0 && <div style={{ position: "absolute", top: 10, right: 10, background: "#757575", color: "#fff", borderRadius: 8, padding: "3px 8px", fontSize: 9, fontWeight: 800 }}>Out of Stock</div>}
+
+
                   {/* Heart / wishlist toggle */}
                   <button onClick={(e) => toggleWishlist(product.id, e)} style={{ position: "absolute", bottom: 8, right: 8, background: isWishlisted(product.id) ? "#fee2e2" : "rgba(255,255,255,0.85)", border: "none", borderRadius: "50%", width: 28, height: 28, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 1px 4px rgba(0,0,0,0.12)", transition: "transform 0.15s", zIndex: 2 }}
                     onMouseEnter={e => e.currentTarget.style.transform="scale(1.2)"}

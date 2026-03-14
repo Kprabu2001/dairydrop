@@ -30,7 +30,7 @@ async def get_admin_stats(
     total_users = await db.execute(select(func.count(User.id)))
     active_users = await db.execute(select(func.count(User.id)).where(User.is_active == True))
     total_orders = await db.execute(select(func.count(Order.id)))
-    low_stock = await db.execute(select(func.count(Product.id)).where(Product.stock < 10, Product.is_active == True))
+    total_products = await db.execute(select(func.count(Product.id)).where(Product.is_active == True))
 
     return AdminStats(
         total_revenue=round(float(total_revenue.scalar() or 0), 2),
@@ -39,7 +39,8 @@ async def get_admin_stats(
         total_users=total_users.scalar() or 0,
         active_users=active_users.scalar() or 0,
         total_orders=total_orders.scalar() or 0,
-        low_stock_products=low_stock.scalar() or 0,
+        total_products=total_products.scalar() or 0,
+        low_stock_products=0,
     )
 
 

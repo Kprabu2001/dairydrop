@@ -122,17 +122,6 @@ class ProductCreate(BaseModel):
     carbs: Optional[str] = None
 
 
-# ── Wishlist ─────────────────────────────────────────────────
-class WishlistItemOut(BaseModel):
-    id: int
-    product_id: int
-    product: ProductOut
-    created_at: datetime
- 
-    class Config:
-        from_attributes = True
-
-
 # ── Cart ────────────────────────────────────────────────────
 class CartItemOut(BaseModel):
     id: int
@@ -337,6 +326,17 @@ class SupportTicketReply(BaseModel):
     status: Optional[str] = None
 
 
+
+# ── Wishlist ─────────────────────────────────────────────────
+class WishlistItemOut(BaseModel):
+    id: int
+    product_id: int
+    product: ProductOut
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
 # ── Admin Stats ─────────────────────────────────────────────
 class AdminStats(BaseModel):
     total_revenue: float
@@ -345,4 +345,5 @@ class AdminStats(BaseModel):
     total_users: int
     active_users: int
     total_orders: int
+    total_products: int
     low_stock_products: int
